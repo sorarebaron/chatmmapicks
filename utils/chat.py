@@ -651,8 +651,8 @@ class ChatMMABot:
                     right_words = parts[1].strip().split()
                     fa_words = left_words[-2:] if len(left_words) >= 2 else left_words[-1:]
                     fb_words = right_words[:2] if len(right_words) >= 2 else right_words[:1]
-                    fa = re.sub(r"[^\w\s']", "", " ".join(fa_words)).strip().title()
-                    fb = re.sub(r"[^\w\s']", "", " ".join(fb_words)).strip().title()
+                    fa = re.sub(r"[^\w\s'\-]", "", " ".join(fa_words)).strip().title()
+                    fb = re.sub(r"[^\w\s'\-]", "", " ".join(fb_words)).strip().title()
                     return ("fight_specific", {"fighter_a": fa, "fighter_b": fb, "event_name": None})
 
         return ("general", {})
