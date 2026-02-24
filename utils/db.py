@@ -64,6 +64,18 @@ def get_or_create_event(
     return resp.data[0]["event_id"]
 
 
+def _name_variants(name: str) -> list[str]:
+    """Return [name] plus the word-reversed form for exactly 2-word names.
+
+    Handles the common Asian name-order ambiguity where 'Wang Cong' and
+    'Cong Wang' refer to the same fighter but appear differently across sources.
+    """
+    parts = name.strip().split()
+    if len(parts) == 2:
+        return [name, f"{parts[1]} {parts[0]}"]
+    return [name]
+
+
 def get_or_create_fight(
     event_id: str,
     fighter_a: str,
@@ -72,22 +84,35 @@ def get_or_create_fight(
 ) -> str:
     """Return fight_id for an existing fight (either order) or create a new one.
     If the fight already exists, fills in weight_class if it was previously blank.
+    Handles 2-word name-order transpositions (e.g. 'Wang Cong' vs 'Cong Wang').
     """
     db = get_supabase()
-    for fa, fb in [(fighter_a, fighter_b), (fighter_b, fighter_a)]:
-        resp = (
-            db.table("fights")
-            .select("fight_id, weight_class")
-            .eq("event_id", event_id)
-            .eq("fighter_a", fa)
-            .eq("fighter_b", fb)
-            .execute()
-        )
-        if resp.data:
-            fight_id = resp.data[0]["fight_id"]
-            if weight_class and not resp.data[0].get("weight_class"):
-                db.table("fights").update({"weight_class": weight_class}).eq("fight_id", fight_id).execute()
-            return fight_id
+
+    fa_variants = _name_variants(fighter_a)
+    fb_variants = _name_variants(fighter_b)
+
+    # Try all (fa_variant, fb_variant) combinations in both fight orderings,
+    # deduplicating to avoid redundant DB round-trips.
+    seen: set[tuple[str, str]] = set()
+    for fav in fa_variants:
+        for fbv in fb_variants:
+            for fa_try, fb_try in [(fav, fbv), (fbv, fav)]:
+                if (fa_try, fb_try) in seen:
+                    continue
+                seen.add((fa_try, fb_try))
+                resp = (
+                    db.table("fights")
+                    .select("fight_id, weight_class")
+                    .eq("event_id", event_id)
+                    .eq("fighter_a", fa_try)
+                    .eq("fighter_b", fb_try)
+                    .execute()
+                )
+                if resp.data:
+                    fight_id = resp.data[0]["fight_id"]
+                    if weight_class and not resp.data[0].get("weight_class"):
+                        db.table("fights").update({"weight_class": weight_class}).eq("fight_id", fight_id).execute()
+                    return fight_id
 
     insert_data: dict = {"event_id": event_id, "fighter_a": fighter_a, "fighter_b": fighter_b}
     if weight_class:
@@ -97,17 +122,29 @@ def get_or_create_fight(
 
 
 def save_analyst_pick(pick_data: dict) -> str:
-    """Insert a row into analyst_picks and return the new pick_id."""
+    """Upsert a row into analyst_picks; update in place if the same analyst+fight
+    already exists (preventing duplicates on re-ingestion). Returns the pick_id."""
     db = get_supabase()
+    resp = (
+        db.table("analyst_picks")
+        .select("pick_id")
+        .eq("fight_id", pick_data["fight_id"])
+        .eq("analyst_name", pick_data["analyst_name"])
+        .limit(1)
+        .execute()
+    )
+    if resp.data:
+        pick_id = resp.data[0]["pick_id"]
+        db.table("analyst_picks").update(pick_data).eq("pick_id", pick_id).execute()
+        return pick_id
     resp = db.table("analyst_picks").insert(pick_data).execute()
     return resp.data[0]["pick_id"]
 
 
 def save_pick_tags(pick_id: str, tags: list[str]) -> None:
-    """Insert tags for a pick (skips empty list)."""
-    if not tags:
-        return
+    """Replace all tags for a pick (deletes existing tags first, then inserts new ones)."""
     db = get_supabase()
+    db.table("pick_tags").delete().eq("pick_id", pick_id).execute()
     rows = [{"pick_id": pick_id, "tag": t.strip()} for t in tags if t.strip()]
     if rows:
         db.table("pick_tags").insert(rows).execute()
