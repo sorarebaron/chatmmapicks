@@ -97,17 +97,29 @@ def get_or_create_fight(
 
 
 def save_analyst_pick(pick_data: dict) -> str:
-    """Insert a row into analyst_picks and return the new pick_id."""
+    """Upsert a row into analyst_picks; update in place if the same analyst+fight
+    already exists (preventing duplicates on re-ingestion). Returns the pick_id."""
     db = get_supabase()
+    resp = (
+        db.table("analyst_picks")
+        .select("pick_id")
+        .eq("fight_id", pick_data["fight_id"])
+        .eq("analyst_name", pick_data["analyst_name"])
+        .limit(1)
+        .execute()
+    )
+    if resp.data:
+        pick_id = resp.data[0]["pick_id"]
+        db.table("analyst_picks").update(pick_data).eq("pick_id", pick_id).execute()
+        return pick_id
     resp = db.table("analyst_picks").insert(pick_data).execute()
     return resp.data[0]["pick_id"]
 
 
 def save_pick_tags(pick_id: str, tags: list[str]) -> None:
-    """Insert tags for a pick (skips empty list)."""
-    if not tags:
-        return
+    """Replace all tags for a pick (deletes existing tags first, then inserts new ones)."""
     db = get_supabase()
+    db.table("pick_tags").delete().eq("pick_id", pick_id).execute()
     rows = [{"pick_id": pick_id, "tag": t.strip()} for t in tags if t.strip()]
     if rows:
         db.table("pick_tags").insert(rows).execute()
