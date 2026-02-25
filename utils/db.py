@@ -473,3 +473,54 @@ def upsert_result(
 def delete_result(result_id: str) -> None:
     """Delete a result row by result_id."""
     get_supabase().table("results").delete().eq("result_id", result_id).execute()
+
+
+
+# ── Analytics helpers ──────────────────────────────────────────────────────────
+
+def get_all_analytics_data() -> dict:
+    """Batch-fetch everything needed for analytics: events, fights, results, picks.
+
+    Returns a dict with keys 'events', 'fights', 'results', 'picks'.
+    Not cached here — callers should apply @st.cache_data if needed.
+    """
+    db = get_supabase()
+
+    events = (
+        db.table("events")
+        .select("event_id, name, date, location")
+        .order("date")
+        .execute()
+        .data or []
+    )
+
+    fights = (
+        db.table("fights")
+        .select("fight_id, event_id, fighter_a, fighter_b, weight_class, bout_order, title_fight")
+        .execute()
+        .data or []
+    )
+
+    results = (
+        db.table("results")
+        .select(
+            "fight_id, winner, method, round, time, referee, finish_details,"
+            "judge1_name, judge1_score, judge1_winner,"
+            "judge2_name, judge2_score, judge2_winner,"
+            "judge3_name, judge3_score, judge3_winner"
+        )
+        .execute()
+        .data or []
+    )
+
+    picks = (
+        db.table("analyst_picks")
+        .select(
+            "pick_id, fight_id, analyst_name, platform, picked_fighter,"
+            "method_prediction, confidence_tag"
+        )
+        .execute()
+        .data or []
+    )
+
+    return {"events": events, "fights": fights, "results": results, "picks": picks}
