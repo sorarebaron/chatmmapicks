@@ -368,3 +368,78 @@ def delete_alias(alias_id: str) -> None:
     """Delete a fighter alias and bust the cache."""
     get_supabase().table("fighter_aliases").delete().eq("alias_id", alias_id).execute()
     get_fighter_aliases.clear()
+
+
+# ── Results helpers ────────────────────────────────────────────────────────────
+
+def get_fights_with_results_for_event(event_id: str) -> list[dict]:
+    """Return fights for an event with their result (if any) joined in.
+
+    Each item is a fight dict with an extra 'result' key (dict or None).
+    Sorted by bout_order ascending (nulls last).
+    """
+    db = get_supabase()
+    fights = (
+        db.table("fights")
+        .select("*")
+        .eq("event_id", event_id)
+        .execute()
+        .data or []
+    )
+    if not fights:
+        return []
+
+    fight_ids = [f["fight_id"] for f in fights]
+    results_rows = (
+        db.table("results")
+        .select("*")
+        .in_("fight_id", fight_ids)
+        .execute()
+        .data or []
+    )
+    results_by_fight = {r["fight_id"]: r for r in results_rows}
+
+    for f in fights:
+        f["result"] = results_by_fight.get(f["fight_id"])
+
+    fights.sort(key=lambda f: (f["bout_order"] is None, f["bout_order"] or 0))
+    return fights
+
+
+def upsert_result(
+    fight_id: str,
+    winner: str | None,
+    method: str | None,
+    round_num: int | None,
+    time: str | None,
+    referee: str | None = None,
+    judge1_name: str | None = None,
+    judge1_score: str | None = None,
+    judge2_name: str | None = None,
+    judge2_score: str | None = None,
+    judge3_name: str | None = None,
+    judge3_score: str | None = None,
+) -> dict:
+    """Insert or update a result row for a fight (upsert on fight_id)."""
+    db = get_supabase()
+    row: dict = {
+        "fight_id": fight_id,
+        "winner": winner or None,
+        "method": method or None,
+        "round": round_num,
+        "time": time or None,
+        "referee": referee or None,
+        "judge1_name": judge1_name or None,
+        "judge1_score": judge1_score or None,
+        "judge2_name": judge2_name or None,
+        "judge2_score": judge2_score or None,
+        "judge3_name": judge3_name or None,
+        "judge3_score": judge3_score or None,
+    }
+    resp = db.table("results").upsert(row, on_conflict="fight_id").execute()
+    return resp.data[0]
+
+
+def delete_result(result_id: str) -> None:
+    """Delete a result row by result_id."""
+    get_supabase().table("results").delete().eq("result_id", result_id).execute()
