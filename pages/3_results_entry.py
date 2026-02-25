@@ -67,10 +67,13 @@ def _render_fight_result(fight: dict) -> None:
         cur_referee = result.get("referee") if result else ""
         cur_j1_name = result.get("judge1_name") if result else ""
         cur_j1_score = result.get("judge1_score") if result else ""
+        cur_j1_winner = result.get("judge1_winner") if result else None
         cur_j2_name = result.get("judge2_name") if result else ""
         cur_j2_score = result.get("judge2_score") if result else ""
+        cur_j2_winner = result.get("judge2_winner") if result else None
         cur_j3_name = result.get("judge3_name") if result else ""
         cur_j3_score = result.get("judge3_score") if result else ""
+        cur_j3_winner = result.get("judge3_winner") if result else None
 
         # Winner / method / round / time
         row1 = st.columns([2, 1, 1, 1])
@@ -113,20 +116,83 @@ def _render_fight_result(fight: dict) -> None:
             key=f"re_ref_{fight_id}",
         )
 
-        # Judges (only shown if method is Decision)
+        # Judges scorecards (only shown if method is Decision)
         if r_method == "Decision":
-            st.markdown("**Judges**")
-            j_col1, j_col2 = st.columns(2)
-            with j_col1:
-                r_j1_name = st.text_input("Judge 1 name", value=cur_j1_name or "", key=f"re_j1n_{fight_id}")
-                r_j2_name = st.text_input("Judge 2 name", value=cur_j2_name or "", key=f"re_j2n_{fight_id}")
-                r_j3_name = st.text_input("Judge 3 name", value=cur_j3_name or "", key=f"re_j3n_{fight_id}")
-            with j_col2:
-                r_j1_score = st.text_input("Judge 1 score (e.g. 29-28)", value=cur_j1_score or "", key=f"re_j1s_{fight_id}")
-                r_j2_score = st.text_input("Judge 2 score", value=cur_j2_score or "", key=f"re_j2s_{fight_id}")
-                r_j3_score = st.text_input("Judge 3 score", value=cur_j3_score or "", key=f"re_j3s_{fight_id}")
+            st.markdown("**Judges' Scorecards**")
+            judge_winner_opts = ["", fight["fighter_a"], fight["fighter_b"]]
+
+            # Column headers
+            hcols = st.columns([3, 2, 3])
+            hcols[0].markdown("**Judge**")
+            hcols[1].markdown("**Score**")
+            hcols[2].markdown("**Winner**")
+
+            # Judge 1
+            j1cols = st.columns([3, 2, 3])
+            with j1cols[0]:
+                r_j1_name = st.text_input(
+                    "Judge 1 name", value=cur_j1_name or "",
+                    label_visibility="collapsed", key=f"re_j1n_{fight_id}",
+                    placeholder="Judge name",
+                )
+            with j1cols[1]:
+                r_j1_score = st.text_input(
+                    "Judge 1 score", value=cur_j1_score or "",
+                    label_visibility="collapsed", key=f"re_j1s_{fight_id}",
+                    placeholder="e.g. 48-47",
+                )
+            with j1cols[2]:
+                j1w_idx = judge_winner_opts.index(cur_j1_winner) if cur_j1_winner in judge_winner_opts else 0
+                r_j1_winner = st.selectbox(
+                    "Judge 1 winner", options=judge_winner_opts, index=j1w_idx,
+                    label_visibility="collapsed", key=f"re_j1w_{fight_id}",
+                )
+
+            # Judge 2
+            j2cols = st.columns([3, 2, 3])
+            with j2cols[0]:
+                r_j2_name = st.text_input(
+                    "Judge 2 name", value=cur_j2_name or "",
+                    label_visibility="collapsed", key=f"re_j2n_{fight_id}",
+                    placeholder="Judge name",
+                )
+            with j2cols[1]:
+                r_j2_score = st.text_input(
+                    "Judge 2 score", value=cur_j2_score or "",
+                    label_visibility="collapsed", key=f"re_j2s_{fight_id}",
+                    placeholder="e.g. 48-47",
+                )
+            with j2cols[2]:
+                j2w_idx = judge_winner_opts.index(cur_j2_winner) if cur_j2_winner in judge_winner_opts else 0
+                r_j2_winner = st.selectbox(
+                    "Judge 2 winner", options=judge_winner_opts, index=j2w_idx,
+                    label_visibility="collapsed", key=f"re_j2w_{fight_id}",
+                )
+
+            # Judge 3
+            j3cols = st.columns([3, 2, 3])
+            with j3cols[0]:
+                r_j3_name = st.text_input(
+                    "Judge 3 name", value=cur_j3_name or "",
+                    label_visibility="collapsed", key=f"re_j3n_{fight_id}",
+                    placeholder="Judge name",
+                )
+            with j3cols[1]:
+                r_j3_score = st.text_input(
+                    "Judge 3 score", value=cur_j3_score or "",
+                    label_visibility="collapsed", key=f"re_j3s_{fight_id}",
+                    placeholder="e.g. 48-47",
+                )
+            with j3cols[2]:
+                j3w_idx = judge_winner_opts.index(cur_j3_winner) if cur_j3_winner in judge_winner_opts else 0
+                r_j3_winner = st.selectbox(
+                    "Judge 3 winner", options=judge_winner_opts, index=j3w_idx,
+                    label_visibility="collapsed", key=f"re_j3w_{fight_id}",
+                )
         else:
-            r_j1_name = r_j1_score = r_j2_name = r_j2_score = r_j3_name = r_j3_score = None
+            r_j1_name = r_j1_score = r_j1_winner = None
+            r_j2_name = r_j2_score = r_j2_winner = None
+            r_j3_name = r_j3_score = r_j3_winner = None
 
         # Save / clear buttons
         btn1, btn2 = st.columns([1, 4])
@@ -147,10 +213,13 @@ def _render_fight_result(fight: dict) -> None:
                             referee=r_referee.strip() or None,
                             judge1_name=r_j1_name.strip() if r_j1_name else None,
                             judge1_score=r_j1_score.strip() if r_j1_score else None,
+                            judge1_winner=r_j1_winner or None,
                             judge2_name=r_j2_name.strip() if r_j2_name else None,
                             judge2_score=r_j2_score.strip() if r_j2_score else None,
+                            judge2_winner=r_j2_winner or None,
                             judge3_name=r_j3_name.strip() if r_j3_name else None,
                             judge3_score=r_j3_score.strip() if r_j3_score else None,
+                            judge3_winner=r_j3_winner or None,
                         )
                         st.success("Result saved.")
                         st.rerun()
