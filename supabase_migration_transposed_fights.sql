@@ -10,8 +10,8 @@
 -- e.g. "Eduarda Moura vs Wang Cong"  tokens → cong eduarda moura wang
 --      "Cong Wang vs Eduarda Moura"  tokens → cong eduarda moura wang  ← same
 --
--- Resolution: Keep the earlier-created fight record; re-point all picks from
--- the duplicate to the canonical record, then delete the duplicate.
+-- Resolution: Keep the fight with the lexicographically smallest fight_id
+-- (arbitrary but deterministic); re-point all picks to it, then delete the rest.
 -- ============================================================================
 
 BEGIN;
@@ -22,7 +22,6 @@ WITH fight_tokens AS (
     SELECT
         fight_id,
         event_id,
-        created_at,
         -- Tokenise: lower all words from both fighter names, sort, rejoin
         ARRAY_TO_STRING(
             ARRAY(
@@ -42,7 +41,7 @@ grouped AS (
     SELECT
         event_id,
         token_key,
-        ARRAY_AGG(fight_id ORDER BY created_at ASC) AS fight_ids
+        ARRAY_AGG(fight_id ORDER BY fight_id ASC) AS fight_ids
     FROM fight_tokens
     GROUP BY event_id, token_key
     HAVING COUNT(*) > 1

@@ -243,3 +243,203 @@ def get_picks_for_event(event_id: str) -> list[dict]:
     ))
 
     return rows
+
+
+# ── QC Editor helpers ─────────────────────────────────────────────────────────
+
+def get_fights_for_event(event_id: str) -> list[dict]:
+    """Return fights for an event with pick_count, sorted by bout_order (nulls last)."""
+    from collections import Counter
+    db = get_supabase()
+    fights = (
+        db.table("fights")
+        .select("*")
+        .eq("event_id", event_id)
+        .order("bout_order")
+        .execute()
+        .data or []
+    )
+    if not fights:
+        return []
+    fight_ids = [f["fight_id"] for f in fights]
+    picks = (
+        db.table("analyst_picks")
+        .select("fight_id")
+        .in_("fight_id", fight_ids)
+        .execute()
+        .data or []
+    )
+    counts = Counter(p["fight_id"] for p in picks)
+    for f in fights:
+        f["pick_count"] = counts.get(f["fight_id"], 0)
+    # Stable sort: fights with bout_order=None go last
+    fights.sort(key=lambda f: (f["bout_order"] is None, f["bout_order"] or 0))
+    return fights
+
+
+def get_picks_for_fight(fight_id: str) -> list[dict]:
+    """Return raw picks with a 'tags' list for a fight, sorted by analyst_name."""
+    from collections import defaultdict
+    db = get_supabase()
+    picks = (
+        db.table("analyst_picks")
+        .select("*")
+        .eq("fight_id", fight_id)
+        .order("analyst_name")
+        .execute()
+        .data or []
+    )
+    if not picks:
+        return []
+    pick_ids = [p["pick_id"] for p in picks]
+    tags_rows = (
+        db.table("pick_tags")
+        .select("pick_id, tag")
+        .in_("pick_id", pick_ids)
+        .execute()
+        .data or []
+    )
+    tag_map: dict[str, list[str]] = defaultdict(list)
+    for t in tags_rows:
+        tag_map[t["pick_id"]].append(t["tag"])
+    for p in picks:
+        p["tags"] = tag_map.get(p["pick_id"], [])
+    return picks
+
+
+def update_event(event_id: str, name: str, date: str | None, location: str | None) -> None:
+    """Update event metadata fields."""
+    get_supabase().table("events").update({
+        "name": name,
+        "date": date or None,
+        "location": location or None,
+    }).eq("event_id", event_id).execute()
+
+
+def update_fight(
+    fight_id: str,
+    fighter_a: str,
+    fighter_b: str,
+    weight_class: str | None,
+    bout_order: int | None,
+) -> None:
+    """Update fight metadata fields."""
+    get_supabase().table("fights").update({
+        "fighter_a": fighter_a,
+        "fighter_b": fighter_b,
+        "weight_class": weight_class or None,
+        "bout_order": bout_order,
+    }).eq("fight_id", fight_id).execute()
+
+
+def update_pick(
+    pick_id: str,
+    analyst_name: str,
+    platform: str | None,
+    source_url: str | None,
+    picked_fighter: str,
+    method_prediction: str | None,
+    confidence_tag: str | None,
+    reasoning_notes: str | None,
+) -> None:
+    """Update an analyst pick by pick_id."""
+    get_supabase().table("analyst_picks").update({
+        "analyst_name": analyst_name,
+        "platform": platform or None,
+        "source_url": source_url or None,
+        "picked_fighter": picked_fighter,
+        "method_prediction": method_prediction or None,
+        "confidence_tag": confidence_tag or None,
+        "reasoning_notes": reasoning_notes or None,
+    }).eq("pick_id", pick_id).execute()
+
+
+def delete_pick(pick_id: str) -> None:
+    """Delete an analyst pick (pick_tags cascade via FK)."""
+    get_supabase().table("analyst_picks").delete().eq("pick_id", pick_id).execute()
+
+
+def delete_fight(fight_id: str) -> None:
+    """Delete a fight and all its picks (cascade via FK)."""
+    get_supabase().table("fights").delete().eq("fight_id", fight_id).execute()
+
+
+def delete_alias(alias_id: str) -> None:
+    """Delete a fighter alias and bust the cache."""
+    get_supabase().table("fighter_aliases").delete().eq("alias_id", alias_id).execute()
+    get_fighter_aliases.clear()
+
+
+# ── Results helpers ────────────────────────────────────────────────────────────
+
+def get_fights_with_results_for_event(event_id: str) -> list[dict]:
+    """Return fights for an event with their result (if any) joined in.
+
+    Each item is a fight dict with an extra 'result' key (dict or None).
+    Sorted by bout_order ascending (nulls last).
+    """
+    db = get_supabase()
+    fights = (
+        db.table("fights")
+        .select("*")
+        .eq("event_id", event_id)
+        .execute()
+        .data or []
+    )
+    if not fights:
+        return []
+
+    fight_ids = [f["fight_id"] for f in fights]
+    results_rows = (
+        db.table("results")
+        .select("*")
+        .in_("fight_id", fight_ids)
+        .execute()
+        .data or []
+    )
+    results_by_fight = {r["fight_id"]: r for r in results_rows}
+
+    for f in fights:
+        f["result"] = results_by_fight.get(f["fight_id"])
+
+    fights.sort(key=lambda f: (f["bout_order"] is None, f["bout_order"] or 0))
+    return fights
+
+
+def upsert_result(
+    fight_id: str,
+    winner: str | None,
+    method: str | None,
+    round_num: int | None,
+    time: str | None,
+    referee: str | None = None,
+    judge1_name: str | None = None,
+    judge1_score: str | None = None,
+    judge2_name: str | None = None,
+    judge2_score: str | None = None,
+    judge3_name: str | None = None,
+    judge3_score: str | None = None,
+) -> dict:
+    """Insert or update a result row for a fight (upsert on fight_id)."""
+    db = get_supabase()
+    row: dict = {
+        "fight_id": fight_id,
+        "winner": winner or None,
+        "method": method or None,
+        "round": round_num,
+        "time": time or None,
+        "referee": referee or None,
+        "judge1_name": judge1_name or None,
+        "judge1_score": judge1_score or None,
+        "judge2_name": judge2_name or None,
+        "judge2_score": judge2_score or None,
+        "judge3_name": judge3_name or None,
+        "judge3_score": judge3_score or None,
+    }
+    resp = db.table("results").upsert(row, on_conflict="fight_id").execute()
+    return resp.data[0]
+
+
+def delete_result(result_id: str) -> None:
+    """Delete a result row by result_id."""
+    get_supabase().table("results").delete().eq("result_id", result_id).execute()
