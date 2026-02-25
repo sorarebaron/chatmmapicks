@@ -415,10 +415,13 @@ def upsert_result(
     referee: str | None = None,
     judge1_name: str | None = None,
     judge1_score: str | None = None,
+    judge1_winner: str | None = None,
     judge2_name: str | None = None,
     judge2_score: str | None = None,
+    judge2_winner: str | None = None,
     judge3_name: str | None = None,
     judge3_score: str | None = None,
+    judge3_winner: str | None = None,
 ) -> dict:
     """Insert or update a result row for a fight (upsert on fight_id)."""
     db = get_supabase()
@@ -431,10 +434,13 @@ def upsert_result(
         "referee": referee or None,
         "judge1_name": judge1_name or None,
         "judge1_score": judge1_score or None,
+        "judge1_winner": judge1_winner or None,
         "judge2_name": judge2_name or None,
         "judge2_score": judge2_score or None,
+        "judge2_winner": judge2_winner or None,
         "judge3_name": judge3_name or None,
         "judge3_score": judge3_score or None,
+        "judge3_winner": judge3_winner or None,
     }
     resp = db.table("results").upsert(row, on_conflict="fight_id").execute()
     return resp.data[0]
