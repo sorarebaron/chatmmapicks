@@ -360,8 +360,11 @@ def delete_pick(pick_id: str) -> None:
 
 
 def delete_fight(fight_id: str) -> None:
-    """Delete a fight and all its picks (cascade via FK)."""
-    get_supabase().table("fights").delete().eq("fight_id", fight_id).execute()
+    """Delete a fight, its picks (cascade via FK), and any associated result row."""
+    db = get_supabase()
+    # Explicitly remove result row first (may not have FK cascade configured)
+    db.table("results").delete().eq("fight_id", fight_id).execute()
+    db.table("fights").delete().eq("fight_id", fight_id).execute()
 
 
 def delete_alias(alias_id: str) -> None:
@@ -375,9 +378,12 @@ def delete_alias(alias_id: str) -> None:
 def get_fights_with_results_for_event(event_id: str) -> list[dict]:
     """Return fights for an event with their result (if any) joined in.
 
+    Only includes fights that have at least one analyst pick — fights with zero
+    picks are data artifacts (e.g. cancelled bouts) and are excluded.
     Each item is a fight dict with an extra 'result' key (dict or None).
     Sorted by bout_order ascending (nulls last).
     """
+    from collections import Counter
     db = get_supabase()
     fights = (
         db.table("fights")
@@ -386,6 +392,22 @@ def get_fights_with_results_for_event(event_id: str) -> list[dict]:
         .execute()
         .data or []
     )
+    if not fights:
+        return []
+
+    fight_ids = [f["fight_id"] for f in fights]
+
+    # Filter to fights that have at least one pick
+    picks_rows = (
+        db.table("analyst_picks")
+        .select("fight_id")
+        .in_("fight_id", fight_ids)
+        .execute()
+        .data or []
+    )
+    fights_with_picks = {r["fight_id"] for r in picks_rows}
+    fights = [f for f in fights if f["fight_id"] in fights_with_picks]
+
     if not fights:
         return []
 
