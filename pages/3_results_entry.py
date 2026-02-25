@@ -65,6 +65,7 @@ def _render_fight_result(fight: dict) -> None:
         cur_round = result.get("round") if result else None
         cur_time = result.get("time") if result else ""
         cur_referee = result.get("referee") if result else ""
+        cur_finish_details = result.get("finish_details") if result else ""
         cur_j1_name = result.get("judge1_name") if result else ""
         cur_j1_score = result.get("judge1_score") if result else ""
         cur_j1_winner = result.get("judge1_winner") if result else None
@@ -115,6 +116,16 @@ def _render_fight_result(fight: dict) -> None:
             value=cur_referee or "",
             key=f"re_ref_{fight_id}",
         )
+
+        # Finish details (KO/TKO, Submission, NC, DQ only)
+        if r_method in ("KO/TKO", "Submission", "NC", "DQ"):
+            r_finish_details = st.text_input(
+                "Details (e.g. Punches to Head at Distance, Rear Naked Choke)",
+                value=cur_finish_details or "",
+                key=f"re_det_{fight_id}",
+            )
+        else:
+            r_finish_details = None
 
         # Judges scorecards (only shown if method is Decision)
         if r_method == "Decision":
@@ -211,6 +222,7 @@ def _render_fight_result(fight: dict) -> None:
                             round_num=int(r_round) if r_round is not None else None,
                             time=r_time.strip() or None,
                             referee=r_referee.strip() or None,
+                            finish_details=r_finish_details.strip() if r_finish_details else None,
                             judge1_name=r_j1_name.strip() if r_j1_name else None,
                             judge1_score=r_j1_score.strip() if r_j1_score else None,
                             judge1_winner=r_j1_winner or None,
