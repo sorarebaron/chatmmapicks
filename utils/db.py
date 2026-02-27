@@ -1,4 +1,7 @@
+import unicodedata
+
 import streamlit as st
+from rapidfuzz import fuzz
 from supabase import create_client, Client
 
 
@@ -64,6 +67,13 @@ def get_or_create_event(
     return resp.data[0]["event_id"]
 
 
+def _normalize_name(name: str) -> str:
+    """Lowercase, strip diacritics (ñ→n, é→e, etc.), collapse whitespace."""
+    nfd = unicodedata.normalize("NFD", name)
+    stripped = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return stripped.lower().strip()
+
+
 def _name_variants(name: str) -> list[str]:
     """Return [name] plus the word-reversed form for exactly 2-word names.
 
@@ -113,6 +123,36 @@ def get_or_create_fight(
                     if weight_class and not resp.data[0].get("weight_class"):
                         db.table("fights").update({"weight_class": weight_class}).eq("fight_id", fight_id).execute()
                     return fight_id
+
+    # No exact match — fuzzy-match against all existing fights for this event.
+    # Handles accented characters (ñ→n), partial names, and middle-name differences.
+    FUZZY_FIGHT_THRESHOLD = 85
+    all_fights = (
+        db.table("fights")
+        .select("fight_id, fighter_a, fighter_b, weight_class")
+        .eq("event_id", event_id)
+        .execute()
+        .data or []
+    )
+    best_fight: dict | None = None
+    best_score = 0.0
+    fa_norm = _normalize_name(fighter_a)
+    fb_norm = _normalize_name(fighter_b)
+    for existing in all_fights:
+        exa = _normalize_name(existing["fighter_a"])
+        exb = _normalize_name(existing["fighter_b"])
+        for a_in, b_in in [(fa_norm, fb_norm), (fb_norm, fa_norm)]:
+            score_a = fuzz.WRatio(a_in, exa)
+            score_b = fuzz.WRatio(b_in, exb)
+            combined = (score_a + score_b) / 2
+            if combined > best_score:
+                best_score = combined
+                best_fight = existing
+    if best_fight and best_score >= FUZZY_FIGHT_THRESHOLD:
+        fight_id = best_fight["fight_id"]
+        if weight_class and not best_fight.get("weight_class"):
+            db.table("fights").update({"weight_class": weight_class}).eq("fight_id", fight_id).execute()
+        return fight_id
 
     insert_data: dict = {"event_id": event_id, "fighter_a": fighter_a, "fighter_b": fighter_b}
     if weight_class:
@@ -357,6 +397,29 @@ def update_pick(
 def delete_pick(pick_id: str) -> None:
     """Delete an analyst pick (pick_tags cascade via FK)."""
     get_supabase().table("analyst_picks").delete().eq("pick_id", pick_id).execute()
+
+
+def merge_fight(source_fight_id: str, target_fight_id: str) -> int:
+    """Reassign all picks from source_fight to target_fight, then delete source_fight.
+
+    Returns the number of picks moved.
+    Raises if there is a unique-constraint conflict (same analyst already has a pick
+    on the target fight) — caller should surface the error to the user.
+    """
+    db = get_supabase()
+    picks = (
+        db.table("analyst_picks")
+        .select("pick_id")
+        .eq("fight_id", source_fight_id)
+        .execute()
+        .data or []
+    )
+    if picks:
+        db.table("analyst_picks").update(
+            {"fight_id": target_fight_id}
+        ).eq("fight_id", source_fight_id).execute()
+    db.table("fights").delete().eq("fight_id", source_fight_id).execute()
+    return len(picks)
 
 
 def delete_fight(fight_id: str) -> None:
