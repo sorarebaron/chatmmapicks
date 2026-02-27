@@ -23,6 +23,7 @@ from utils.db import (
     get_fighter_aliases,
     get_fights_for_event,
     get_picks_for_fight,
+    merge_fight,
     save_alias,
     save_pick_tags,
     update_event,
@@ -200,7 +201,78 @@ def _render_pick(pick: dict) -> None:
             _render_delete_pick(pick_id)
 
 
-def _render_fight(fight: dict) -> None:
+def _render_merge_fight(fight: dict, all_fights: list[dict]) -> None:
+    """Merge-into-existing-fight control — moves picks then deletes the duplicate."""
+    fight_id = fight["fight_id"]
+    other_fights = [f for f in all_fights if f["fight_id"] != fight_id]
+    if not other_fights:
+        return
+
+    confirm_key = f"qc_confirm_merge_{fight_id}"
+    selected_target_key = f"qc_merge_selected_{fight_id}"
+
+    st.markdown("**Merge duplicate into existing fight**")
+
+    if not st.session_state.get(confirm_key, False):
+        m_col1, m_col2 = st.columns([5, 1])
+        with m_col1:
+            target_id = st.selectbox(
+                "Merge into:",
+                options=[f["fight_id"] for f in other_fights],
+                format_func=lambda fid: next(
+                    (
+                        f"{f['fighter_a']} vs {f['fighter_b']}"
+                        + (f"  ·  bout #{f['bout_order']}" if f.get("bout_order") else "")
+                        for f in other_fights
+                        if f["fight_id"] == fid
+                    ),
+                    fid,
+                ),
+                key=f"qc_merge_sel_{fight_id}",
+            )
+        with m_col2:
+            st.write("")  # vertical alignment spacer
+            if st.button("Merge →", key=f"qc_merge_btn_{fight_id}", type="primary"):
+                st.session_state[confirm_key] = True
+                st.session_state[selected_target_key] = target_id
+                st.rerun()
+    else:
+        target_id = st.session_state.get(selected_target_key)
+        target_fight = next((f for f in other_fights if f["fight_id"] == target_id), None)
+        target_label = (
+            f"{target_fight['fighter_a']} vs {target_fight['fighter_b']}"
+            if target_fight else "?"
+        )
+        st.warning(
+            f"Move **{fight['pick_count']} pick(s)** from this fight into "
+            f"**{target_label}**, then delete this duplicate fight row?"
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Confirm merge", key=f"qc_confirm_merge_btn_{fight_id}", type="primary"):
+                try:
+                    n = merge_fight(fight_id, target_id)
+                    del st.session_state[confirm_key]
+                    st.session_state.pop(selected_target_key, None)
+                    st.success(f"Merged {n} pick(s) into {target_label}.")
+                    st.rerun()
+                except Exception as exc:
+                    msg = str(exc).lower()
+                    if "unique" in msg or "duplicate" in msg:
+                        st.error(
+                            "Merge blocked: an analyst already has a pick on the target fight. "
+                            "Delete the conflicting pick first, then retry."
+                        )
+                    else:
+                        st.error(f"Merge failed: {exc}")
+        with c2:
+            if st.button("Cancel", key=f"qc_cancel_merge_{fight_id}"):
+                del st.session_state[confirm_key]
+                st.session_state.pop(selected_target_key, None)
+                st.rerun()
+
+
+def _render_fight(fight: dict, all_fights: list[dict]) -> None:
     """Render an expandable fight card with metadata editor and picks."""
     fight_id = fight["fight_id"]
     pick_count = fight["pick_count"]
@@ -258,6 +330,15 @@ def _render_fight(fight: dict) -> None:
                     )
                     st.success("Fight saved.")
                     st.rerun()
+
+        # ── Merge fight (shown first so it's visible immediately on open) ─────
+
+        st.divider()
+        try:
+            _render_merge_fight(fight, all_fights)
+        except Exception as exc:
+            st.error(f"Merge UI error: {exc}")
+        st.divider()
 
         # ── Picks for this fight ──────────────────────────────────────────────
 
@@ -431,7 +512,7 @@ with tab1:
     else:
         st.markdown(f"**{len(fights)} fight(s)**")
         for fight in fights:
-            _render_fight(fight)
+            _render_fight(fight, fights)
 
 # ── Tab 2: Fighter Aliases ────────────────────────────────────────────────────
 
