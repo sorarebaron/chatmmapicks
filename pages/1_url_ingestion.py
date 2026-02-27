@@ -74,6 +74,7 @@ CONFIDENCE_OPTIONS = ["lean", "confident", "lock"]
 METHOD_OPTIONS = ["", "KO/TKO", "Submission", "Decision", "NC", "DQ"]
 FUZZY_THRESHOLD = 85
 FUZZY_MIN_SCORE = 50  # below this the match is too weak to prompt; treat as new fighter
+
 # Normalize free-text method strings Claude might return to the canonical values above
 _METHOD_NORMALIZER = {
     "ko": "KO/TKO",
