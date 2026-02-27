@@ -73,7 +73,7 @@ Return this JSON structure:
 CONFIDENCE_OPTIONS = ["lean", "confident", "lock"]
 METHOD_OPTIONS = ["", "KO/TKO", "Submission", "Decision", "NC", "DQ"]
 FUZZY_THRESHOLD = 85
-
+FUZZY_MIN_SCORE = 50  # below this the match is too weak to prompt; treat as new fighter
 # Normalize free-text method strings Claude might return to the canonical values above
 _METHOD_NORMALIZER = {
     "ko": "KO/TKO",
@@ -375,7 +375,7 @@ elif st.session_state.ing_stage == "review_picks":
                     names_to_check = {n for n in [fa, fb, picked] if n}
                     for name in sorted(names_to_check):
                         canonical, score = fuzzy_match(name, aliases)
-                        if score < FUZZY_THRESHOLD:
+                        if score < FUZZY_THRESHOLD and score >= FUZZY_MIN_SCORE:
                             with st.expander(
                                 f"⚠️ Name not confidently matched: **{name}**"
                                 + (f" (closest: '{canonical}', {score}%)" if canonical else ""),
