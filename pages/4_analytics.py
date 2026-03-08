@@ -8,11 +8,19 @@ Four tabs:
   4. Officials          — referee and judge appearances with scorecard tendencies
 """
 
+import unicodedata
+
 import streamlit as st
 import pandas as pd
 from collections import defaultdict
 
 from utils.db import get_all_analytics_data
+
+
+def _norm(name: str) -> str:
+    """Lowercase and strip diacritics for fighter name comparison (e.g. é→e, ñ→n)."""
+    nfd = unicodedata.normalize("NFD", name)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn").lower().strip()
 
 
 # ── Data loading & assembly ────────────────────────────────────────────────────
@@ -49,13 +57,13 @@ def _build_rows(raw: dict) -> list[dict]:
         is_nc = winner.lower() in ("nc / draw", "nc", "draw", "") if winner else True
         correct: bool | None = None
         if result and winner and not is_nc and picked:
-            correct = winner.lower() == picked.lower()
+            correct = _norm(winner) == _norm(picked)
 
         # Method prediction correctness:
         #   None  = no result yet, or either side has no method data
         method_correct: bool | None = None
         if result and actual_method and predicted_method:
-            method_correct = actual_method == predicted_method
+            method_correct = actual_method.lower() == predicted_method.lower()
 
         rows.append({
             "pick_id": pick["pick_id"],
@@ -358,8 +366,8 @@ with tab_ev:
             act_method = fr[0]["actual_method"]
             title = fr[0]["title_fight"]
 
-            picks_a = sum(1 for r in fr if r["picked_fighter"].lower() == fa.lower())
-            picks_b = sum(1 for r in fr if r["picked_fighter"].lower() == fb.lower())
+            picks_a = sum(1 for r in fr if _norm(r["picked_fighter"]) == _norm(fa))
+            picks_b = sum(1 for r in fr if _norm(r["picked_fighter"]) == _norm(fb))
             total_picks = picks_a + picks_b
 
             if total_picks > 0:
