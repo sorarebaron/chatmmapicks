@@ -13,6 +13,7 @@ import unicodedata
 import streamlit as st
 import pandas as pd
 from collections import defaultdict
+from rapidfuzz import fuzz
 
 from utils.db import get_all_analytics_data
 
@@ -21,6 +22,24 @@ def _norm(name: str) -> str:
     """Lowercase and strip diacritics for fighter name comparison (e.g. é→e, ñ→n)."""
     nfd = unicodedata.normalize("NFD", name)
     return "".join(c for c in nfd if unicodedata.category(c) != "Mn").lower().strip()
+
+
+def _resolve_side(name_norm: str, fa_norm: str, fb_norm: str, threshold: int = 60) -> str | None:
+    """Return 'a', 'b', or None — which fighter this name refers to.
+
+    Uses exact normalized match first, then falls back to fuzzy matching.
+    This handles spelling variants (e.g. 'Allin Perez' → 'Ailín Pérez') that
+    survive diacritic stripping but differ by a character or two.
+    """
+    if name_norm == fa_norm:
+        return "a"
+    if name_norm == fb_norm:
+        return "b"
+    score_a = fuzz.WRatio(name_norm, fa_norm) if fa_norm else 0
+    score_b = fuzz.WRatio(name_norm, fb_norm) if fb_norm else 0
+    if max(score_a, score_b) < threshold:
+        return None
+    return "a" if score_a >= score_b else "b"
 
 
 # ── Data loading & assembly ────────────────────────────────────────────────────
@@ -54,10 +73,24 @@ def _build_rows(raw: dict) -> list[dict]:
         #   None  = no result yet, or result was NC/Draw (treat as push)
         #   True  = analyst picked the winner
         #   False = analyst picked the loser
+        #
+        # We resolve which fighter each name refers to (fighter_a vs fighter_b)
+        # using fuzzy matching so that spelling variants (e.g. "Allin Perez"
+        # vs the DB's "Ailín Pérez") are still matched correctly.
+        # The winner is always stored as exactly fighter_a or fighter_b (from
+        # the Results Entry selectbox), so side-resolution is the reliable path.
         is_nc = winner.lower() in ("nc / draw", "nc", "draw", "") if winner else True
         correct: bool | None = None
         if result and winner and not is_nc and picked:
-            correct = _norm(winner) == _norm(picked)
+            fa_norm = _norm(fight.get("fighter_a") or "")
+            fb_norm = _norm(fight.get("fighter_b") or "")
+            winner_side = _resolve_side(_norm(winner), fa_norm, fb_norm)
+            picked_side = _resolve_side(_norm(picked), fa_norm, fb_norm)
+            if winner_side is not None and picked_side is not None:
+                correct = winner_side == picked_side
+            else:
+                # Fallback: direct normalized comparison
+                correct = _norm(winner) == _norm(picked)
 
         # Method prediction correctness:
         #   None  = no result yet, or either side has no method data
@@ -366,8 +399,10 @@ with tab_ev:
             act_method = fr[0]["actual_method"]
             title = fr[0]["title_fight"]
 
-            picks_a = sum(1 for r in fr if _norm(r["picked_fighter"]) == _norm(fa))
-            picks_b = sum(1 for r in fr if _norm(r["picked_fighter"]) == _norm(fb))
+            fa_norm = _norm(fa)
+            fb_norm = _norm(fb)
+            picks_a = sum(1 for r in fr if _resolve_side(_norm(r["picked_fighter"]), fa_norm, fb_norm) == "a")
+            picks_b = sum(1 for r in fr if _resolve_side(_norm(r["picked_fighter"]), fa_norm, fb_norm) == "b")
             total_picks = picks_a + picks_b
 
             if total_picks > 0:
@@ -378,7 +413,9 @@ with tab_ev:
             is_nc = winner.lower() in ("nc / draw", "nc", "draw") if winner else False
 
             if has_result and winner and not is_nc:
-                consensus_hit = consensus_fighter and winner.lower() == consensus_fighter.lower()
+                winner_side = _resolve_side(_norm(winner), fa_norm, fb_norm)
+                consensus_side = "a" if consensus_fighter == fa else ("b" if consensus_fighter == fb else None)
+                consensus_hit = winner_side is not None and consensus_side is not None and winner_side == consensus_side
                 result_icon = "✅" if consensus_hit else "❌"
             elif has_result and is_nc:
                 result_icon = "🔄"
