@@ -280,7 +280,9 @@ def get_all_picks() -> list[dict]:
 
     rows = []
     for pick in picks:
-        fight = fights.get(pick["fight_id"], {})
+        fight = fights.get(pick["fight_id"])
+        if not fight:
+            continue
         event = events.get(fight.get("event_id"), {})
         rows.append({
             "date": event.get("date") or "",
