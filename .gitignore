@@ -10,3 +10,5 @@ dist/
 build/
 .venv/
 venv/
+audit_*.py
+audit_*.sql
