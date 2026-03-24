@@ -130,7 +130,7 @@ def _render_fight_result(fight: dict) -> None:
         # Judges scorecards (only shown if method is Decision)
         if r_method == "Decision":
             st.markdown("**Judges' Scorecards**")
-            judge_winner_opts = ["", fight["fighter_a"], fight["fighter_b"]]
+            judge_winner_opts = ["", fight["fighter_a"], fight["fighter_b"], "Draw"]
 
             # Column headers
             hcols = st.columns([3, 2, 3])
