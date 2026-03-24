@@ -3,10 +3,9 @@ import io
 
 import streamlit as st
 
-from utils.db import get_events, get_picks_for_event
+from utils.db import get_events, get_picks_for_event, get_all_picks
 
-# Columns in the exact order the original ChatMMA app expects
-CHATMMA_COLUMNS = ["date", "analyst", "platform", "event", "location", "fight", "weight_class", "pick", "context"]
+CHATMMA_COLUMNS = ["date", "analyst", "platform", "event", "location", "fight", "weight_class", "pick", "context", "method"]
 
 st.title("Export Picks")
 st.caption("Download picks as a CSV compatible with the original ChatMMA app.")
@@ -55,23 +54,30 @@ st.download_button(
 )
 
 st.caption(
-    "Columns: date · analyst · platform · event · location · fight · weight_class · pick · context  \n"
-    "This matches the format used to build chatmma.db in the original ChatMMA app."
+    "Columns: date · analyst · platform · event · location · fight · weight_class · pick · context · method"
 )
 
-# ── Full export with extra columns ────────────────────────────────────────────
-with st.expander("Full export (includes method)"):
-    st.caption("These extra columns are stored in chatmmatracker but not in the original CSV format.")
-    FULL_COLUMNS = CHATMMA_COLUMNS + ["method"]
-    buf2 = io.StringIO()
-    writer2 = csv.DictWriter(buf2, fieldnames=FULL_COLUMNS, extrasaction="ignore")
-    writer2.writeheader()
-    writer2.writerows(rows)
-    csv_bytes2 = buf2.getvalue().encode("utf-8")
+st.divider()
+
+# ── Export all events ──────────────────────────────────────────────────────────
+st.subheader("Export All Events")
+st.caption("Download every pick across all events in a single CSV.")
+
+all_rows = get_all_picks()
+if all_rows:
+    all_buf = io.StringIO()
+    all_writer = csv.DictWriter(all_buf, fieldnames=CHATMMA_COLUMNS, extrasaction="ignore")
+    all_writer.writeheader()
+    all_writer.writerows(all_rows)
+    all_csv_bytes = all_buf.getvalue().encode("utf-8")
 
     st.download_button(
-        label="⬇️ Download full CSV",
-        data=csv_bytes2,
-        file_name=f"{event_name_slug}_picks_full.csv",
+        label="⬇️ Download all events CSV",
+        data=all_csv_bytes,
+        file_name="all_events_picks.csv",
         mime="text/csv",
+        type="primary",
     )
+    st.caption(f"{len(all_rows)} total pick(s) across all events.")
+else:
+    st.info("No picks found in the database.")
