@@ -259,6 +259,46 @@ def get_picks_for_event(event_id: str) -> list[dict]:
     return rows
 
 
+def get_all_picks() -> list[dict]:
+    """Return a flat list of every pick across all events, joined with fight and event data."""
+    db = get_supabase()
+
+    events = {
+        e["event_id"]: e
+        for e in (db.table("events").select("event_id, name, date, location").execute().data or [])
+    }
+    fights = {
+        f["fight_id"]: f
+        for f in (db.table("fights").select("fight_id, event_id, fighter_a, fighter_b, weight_class, bout_order").execute().data or [])
+    }
+    picks = (
+        db.table("analyst_picks")
+        .select("fight_id, analyst_name, platform, picked_fighter, method_prediction, reasoning_notes")
+        .execute()
+        .data or []
+    )
+
+    rows = []
+    for pick in picks:
+        fight = fights.get(pick["fight_id"], {})
+        event = events.get(fight.get("event_id"), {})
+        rows.append({
+            "date": event.get("date") or "",
+            "analyst": pick.get("analyst_name") or "",
+            "platform": pick.get("platform") or pick.get("analyst_name") or "",
+            "event": event.get("name") or "",
+            "location": event.get("location") or "",
+            "fight": f"{fight.get('fighter_a', '')} vs {fight.get('fighter_b', '')}",
+            "weight_class": fight.get("weight_class") or "",
+            "pick": pick.get("picked_fighter") or "",
+            "context": pick.get("reasoning_notes") or "",
+            "method": pick.get("method_prediction") or "",
+        })
+
+    rows.sort(key=lambda r: (r["date"], r["event"], r["fight"], r["analyst"]))
+    return rows
+
+
 # ── QC Editor helpers ─────────────────────────────────────────────────────────
 
 def get_fights_for_event(event_id: str) -> list[dict]:
