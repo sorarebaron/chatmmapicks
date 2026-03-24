@@ -1,0 +1,6 @@
+[theme]
+primaryColor     = "#FF0080"   # hot pink / magenta — main accent
+backgroundColor  = "#0D000F"   # deep near-black with dark-wine tint
+secondaryBackgroundColor = "#1A0020"  # slightly lighter for sidebar / cards
+textColor        = "#FFFFFF"   # clean white for readability
+font             = "sans serif"
