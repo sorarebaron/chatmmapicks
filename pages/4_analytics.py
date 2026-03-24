@@ -403,78 +403,127 @@ with tab_off:
     fight_map_off = {f["fight_id"]: f for f in raw["fights"]}
     event_map_off = {e["event_id"]: e for e in raw["events"]}
 
-    officials: dict[str, dict] = {}
+    judges: dict[str, list] = {}
+    referees: dict[str, list] = {}
 
     for res in raw["results"]:
         fight = fight_map_off.get(res["fight_id"], {})
         event = event_map_off.get(fight.get("event_id"), {})
         fight_label = f"{fight.get('fighter_a', '')} vs {fight.get('fighter_b', '')}"
         event_label = event.get("name", "")
+        actual_winner = (res.get("winner") or "").strip()
+        method = (res.get("method") or "").strip()
+        rnd = res.get("round")
 
         ref = (res.get("referee") or "").strip()
         if ref:
-            if ref not in officials:
-                officials[ref] = {"roles": set(), "fights": []}
-            officials[ref]["roles"].add("Referee")
-            officials[ref]["fights"].append({
+            if ref not in referees:
+                referees[ref] = []
+            referees[ref].append({
                 "event": event_label,
                 "fight": fight_label,
-                "role": "Referee",
-                "score": "",
+                "winner": actual_winner,
+                "method": method,
+                "round": rnd,
             })
 
         for j in [1, 2, 3]:
             jname = (res.get(f"judge{j}_name") or "").strip()
             jscore = (res.get(f"judge{j}_score") or "").strip()
+            jwinner = (res.get(f"judge{j}_winner") or "").strip()
             if jname:
-                if jname not in officials:
-                    officials[jname] = {"roles": set(), "fights": []}
-                officials[jname]["roles"].add("Judge")
-                officials[jname]["fights"].append({
+                if jname not in judges:
+                    judges[jname] = []
+                judges[jname].append({
                     "event": event_label,
                     "fight": fight_label,
-                    "role": "Judge",
                     "score": jscore,
+                    "scored_for": jwinner,
+                    "actual_winner": actual_winner,
+                    "method": method,
                 })
 
-    if not officials:
+    if not judges and not referees:
         st.info("No officials recorded yet. Enter referee and judge data on the **Results Entry** page.")
     else:
-        # Summary table
-        summary_rows = []
-        for name, info in sorted(officials.items()):
-            roles_str = " / ".join(sorted(info["roles"]))
-            judge_fights = [f for f in info["fights"] if f["role"] == "Judge"]
-            ref_fights = [f for f in info["fights"] if f["role"] == "Referee"]
-            scores = [f["score"] for f in judge_fights if f["score"]]
-            unique_scores = sorted(set(scores))
-            score_summary = ", ".join(unique_scores) if unique_scores else "—"
-            summary_rows.append({
-                "Official": name,
-                "Role(s)": roles_str,
-                "Fights Reffed": len(ref_fights),
-                "Fights Judged": len(judge_fights),
-                "Scores Given": score_summary,
-            })
-        summary_rows.sort(
-            key=lambda x: (x["Fights Judged"] + x["Fights Reffed"]),
-            reverse=True,
-        )
-        st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+        # ── Judges ──────────────────────────────────────────────────────────
+        if judges:
+            st.markdown("### Judges")
 
-        st.divider()
-        st.subheader("Detail by Official")
+            judge_summary = []
+            for name, fights in sorted(judges.items()):
+                scores = [f["score"] for f in fights if f["score"]]
+                most_common_score = max(set(scores), key=scores.count) if scores else "—"
 
-        for name, info in sorted(officials.items(), key=lambda x: -len(x[1]["fights"])):
-            roles_str = " / ".join(sorted(info["roles"]))
-            fight_count = len(info["fights"])
-            with st.expander(f"**{name}** — {roles_str} · {fight_count} fight(s)", expanded=False):
-                detail_rows = []
-                for f in sorted(info["fights"], key=lambda x: (x["event"], x["fight"])):
-                    detail_rows.append({
-                        "Event": f["event"],
-                        "Fight": f["fight"],
-                        "Role": f["role"],
-                        "Score": f["score"] or "—",
-                    })
-                st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
+                scoreable = [
+                    f for f in fights
+                    if f["scored_for"] and f["actual_winner"]
+                    and f["actual_winner"] not in ("", "Draw", "NC")
+                ]
+                correct = sum(1 for f in scoreable if f["scored_for"] == f["actual_winner"])
+                accuracy = f"{correct}/{len(scoreable)} ({correct/len(scoreable):.0%})" if scoreable else "—"
+
+                judge_summary.append({
+                    "Judge": name,
+                    "Fights Judged": len(fights),
+                    "Most Common Score": most_common_score,
+                    "Scorecard Accuracy": accuracy,
+                })
+            judge_summary.sort(key=lambda x: x["Fights Judged"], reverse=True)
+            st.dataframe(pd.DataFrame(judge_summary), use_container_width=True, hide_index=True)
+
+            st.markdown("**Detail by Judge**")
+            for name, fights in sorted(judges.items(), key=lambda x: -len(x[1])):
+                with st.expander(f"**{name}** · {len(fights)} fight(s)", expanded=False):
+                    detail_rows = []
+                    for f in sorted(fights, key=lambda x: (x["event"], x["fight"])):
+                        if f["scored_for"] and f["actual_winner"] and f["actual_winner"] not in ("", "Draw", "NC"):
+                            correct_icon = "✓" if f["scored_for"] == f["actual_winner"] else "✗"
+                        else:
+                            correct_icon = "—"
+                        detail_rows.append({
+                            "Event": f["event"],
+                            "Fight": f["fight"],
+                            "Score": f["score"] or "—",
+                            "Scored For": f["scored_for"] or "—",
+                            "Actual Winner": f["actual_winner"] or "—",
+                            "Correct": correct_icon,
+                        })
+                    st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
+
+        # ── Referees ─────────────────────────────────────────────────────────
+        if referees:
+            if judges:
+                st.divider()
+            st.markdown("### Referees")
+
+            ref_summary = []
+            for name, fights in sorted(referees.items()):
+                ko_tko = sum(1 for f in fights if f["method"] == "KO/TKO")
+                sub = sum(1 for f in fights if f["method"] == "Submission")
+                dec = sum(1 for f in fights if f["method"] == "Decision")
+                other = sum(1 for f in fights if f["method"] not in ("KO/TKO", "Submission", "Decision") and f["method"])
+                ref_summary.append({
+                    "Referee": name,
+                    "Fights": len(fights),
+                    "KO/TKO": ko_tko,
+                    "Submission": sub,
+                    "Decision": dec,
+                    "NC/DQ": other,
+                })
+            ref_summary.sort(key=lambda x: x["Fights"], reverse=True)
+            st.dataframe(pd.DataFrame(ref_summary), use_container_width=True, hide_index=True)
+
+            st.markdown("**Detail by Referee**")
+            for name, fights in sorted(referees.items(), key=lambda x: -len(x[1])):
+                with st.expander(f"**{name}** · {len(fights)} fight(s)", expanded=False):
+                    detail_rows = []
+                    for f in sorted(fights, key=lambda x: (x["event"], x["fight"])):
+                        detail_rows.append({
+                            "Event": f["event"],
+                            "Fight": f["fight"],
+                            "Winner": f["winner"] or "—",
+                            "Method": f["method"] or "—",
+                            "Round": f["round"] if f["round"] else "—",
+                        })
+                    st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
