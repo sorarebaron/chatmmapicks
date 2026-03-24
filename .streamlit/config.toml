@@ -1,6 +1,6 @@
 [theme]
-primaryColor     = "#FF0080"   # hot pink / magenta — main accent
-backgroundColor  = "#0D000F"   # deep near-black with dark-wine tint
-secondaryBackgroundColor = "#1A0020"  # slightly lighter for sidebar / cards
-textColor        = "#FFFFFF"   # clean white for readability
-font             = "sans serif"
+primaryColor             = "#D20A0A"   # UFC red — buttons, links, active elements
+backgroundColor          = "#0A0A0A"   # octagon black
+secondaryBackgroundColor = "#1A1A1A"   # dark cage-steel for sidebar / cards
+textColor                = "#F0F0F0"   # bright white
+font                     = "sans serif"
