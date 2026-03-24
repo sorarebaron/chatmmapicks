@@ -25,7 +25,6 @@ from utils.db import (
     get_picks_for_fight,
     merge_fight,
     save_alias,
-    save_pick_tags,
     update_event,
     update_fight,
     update_pick,
@@ -145,15 +144,7 @@ def _render_pick(pick: dict) -> None:
             height=80,
         )
 
-        # Row 4: tags
-        existing_tags = ", ".join(pick.get("tags") or [])
-        p_tags = st.text_input(
-            "Tags (comma-separated)",
-            value=existing_tags,
-            key=f"qc_tg_{pick_id}",
-        )
-
-        # Row 5: save / delete
+        # Row 4: save / delete
         btn_col1, btn_col2 = st.columns([1, 4])
         with btn_col1:
             if st.button("Save pick", key=f"qc_save_pick_{pick_id}"):
@@ -173,8 +164,6 @@ def _render_pick(pick: dict) -> None:
                             None,
                             p_notes.strip() or None,
                         )
-                        new_tags = [t.strip() for t in p_tags.split(",") if t.strip()]
-                        save_pick_tags(pick_id, new_tags)
                         st.success("Pick saved.")
                         st.rerun()
                     except Exception as exc:
