@@ -6,7 +6,6 @@ to work with the Supabase data model used by ChatMMAPicks Tracker.
 
 Schema mapping (ChatMMA original → ChatMMAPicks Supabase):
   predictions.pick ('fighter_a'/'fighter_b') → analyst_picks.picked_fighter (actual name)
-  predictions.context_tags (JSON array)      → pick_tags table (separate rows)
   predictions.notes                          → analyst_picks.reasoning_notes
   predictions.method                         → analyst_picks.method_prediction
   analysts.accuracy_rate                     → not yet tracked (defaults to 0)
@@ -55,7 +54,7 @@ class QueryOptimizer:
         return resp.data or []
 
     def _get_picks_for_fight(self, fight_id: str) -> list[dict]:
-        """Return analyst_picks rows for a fight, with tags pre-attached."""
+        """Return analyst_picks rows for a fight."""
         db = get_supabase()
         picks_resp = (
             db.table("analyst_picks")
@@ -66,26 +65,7 @@ class QueryOptimizer:
             .eq("fight_id", fight_id)
             .execute()
         )
-        picks = picks_resp.data or []
-        if not picks:
-            return []
-
-        # Attach tags
-        pick_ids = [p["pick_id"] for p in picks]
-        tags_resp = (
-            db.table("pick_tags")
-            .select("pick_id, tag")
-            .in_("pick_id", pick_ids)
-            .execute()
-        )
-        tags_by_pick: dict[str, list[str]] = {}
-        for row in tags_resp.data or []:
-            tags_by_pick.setdefault(row["pick_id"], []).append(row["tag"])
-
-        for p in picks:
-            p["tags"] = tags_by_pick.get(p["pick_id"], [])
-
-        return picks
+        return picks_resp.data or []
 
     def _classify_picks(
         self, picks: list[dict], fighter_a: str, fighter_b: str
@@ -106,11 +86,6 @@ class QueryOptimizer:
         return picks_a, picks_b
 
     def _build_fighter_context(self, picks: list[dict]) -> dict:
-        all_tags: list[str] = []
-        for p in picks:
-            all_tags.extend(p.get("tags", []))
-
-        tag_counts = Counter(all_tags)
         methods = Counter(
             p["method_prediction"] for p in picks if p.get("method_prediction")
         )
@@ -121,10 +96,6 @@ class QueryOptimizer:
         ][:3]
 
         return {
-            "top_tags": [
-                {"tag": tag, "count": cnt}
-                for tag, cnt in tag_counts.most_common(5)
-            ],
             "methods": dict(methods),
             "example_rationales": rationales,
         }
@@ -374,14 +345,6 @@ class QueryOptimizer:
             if underdog_count < 2 or underdog_count >= total / 2:
                 continue
 
-            all_tags: list[str] = []
-            for p in underdog_picks_list:
-                all_tags.extend(p.get("tags", []))
-            top_tags = [
-                {"tag": t, "count": c}
-                for t, c in Counter(all_tags).most_common(3)
-            ]
-
             underdog_picks.append({
                 "fight": f"{fight['fighter_a']} vs {fight['fighter_b']}",
                 "fighter_a": fight["fighter_a"],
@@ -396,7 +359,6 @@ class QueryOptimizer:
                     for p in underdog_picks_list
                 ],
                 "value_score": underdog_count / total,
-                "top_tags": top_tags,
             })
 
         underdog_picks.sort(key=lambda x: x["value_score"], reverse=True)
@@ -438,10 +400,6 @@ PREDICTION SUMMARY:
 """
 
         for fighter, ctx in [(fight['fighter_a'], a_ctx), (fight['fighter_b'], b_ctx)]:
-            if ctx['top_tags']:
-                prompt += f"\nKEY FACTORS FOR {fighter.upper()}:\n"
-                for t in ctx['top_tags'][:5]:
-                    prompt += f"- {t['tag'].replace('_', ' ')}: mentioned by {t['count']} analysts\n"
             if ctx['methods']:
                 methods_str = ", ".join(
                     f"{m} ({c})" for m, c in ctx['methods'].items()
@@ -468,7 +426,7 @@ PREDICTION SUMMARY:
 INSTRUCTIONS:
 1. Answer the user's question based on the consensus and reasoning above
 2. Focus on WHY analysts favor each fighter, not just the numbers
-3. Mention specific context tags and analyst reasoning
+3. Mention specific analyst reasoning
 4. If asked about methods, reference the expected finish types
 5. Keep response conversational and insightful (2-4 paragraphs)
 
@@ -558,9 +516,6 @@ BEST UNDERDOG PICKS (sorted by value):
                     f"   - Underdog pick: {pick['underdog_count']}-{pick['favorite_count']} "
                     f"({pick['underdog_percentage']:.0f}%)\n"
                 )
-                if pick['top_tags']:
-                    tags_str = ', '.join(t['tag'].replace('_', ' ') for t in pick['top_tags'])
-                    prompt += f"   - Key factors: {tags_str}\n"
                 if pick['high_accuracy_analysts']:
                     names = [a['name'] for a in pick['high_accuracy_analysts'][:3]]
                     prompt += f"   - Backed by: {', '.join(names)}\n"

@@ -11,7 +11,6 @@ from utils.db import (
     get_or_create_fight,
     save_alias,
     save_analyst_pick,
-    save_pick_tags,
 )
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -345,13 +344,6 @@ elif st.session_state.ing_stage == "review_picks":
                     key=f"reasoning_{ai}_{pi}",
                 )
 
-                tags_raw = st.text_input(
-                    "Tags (comma-separated)",
-                    value="",
-                    placeholder="e.g. grappling-edge, title-fight",
-                    key=f"tags_{ai}_{pi}",
-                )
-
                 # ── Fighter name resolution ───────────────────────────────
                 name_overrides: dict[str, str] = {}
 
@@ -396,7 +388,6 @@ elif st.session_state.ing_stage == "review_picks":
                         "picked_fighter": picked,
                         "method": method,
                         "reasoning": reasoning,
-                        "tags": [t.strip() for t in tags_raw.split(",") if t.strip()],
                         "name_overrides": name_overrides,
                     }
                 )
@@ -444,8 +435,7 @@ elif st.session_state.ing_stage == "review_picks":
                         "method_prediction": pick["method"] or None,
                         "reasoning_notes": pick["reasoning"] or None,
                     }
-                    pick_id = save_analyst_pick(pick_row)
-                    save_pick_tags(pick_id, pick["tags"])
+                    save_analyst_pick(pick_row)
                     saved_count += 1
 
             st.session_state.ing_saved_count = saved_count

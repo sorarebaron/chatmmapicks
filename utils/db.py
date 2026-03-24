@@ -181,14 +181,6 @@ def save_analyst_pick(pick_data: dict) -> str:
     return resp.data[0]["pick_id"]
 
 
-def save_pick_tags(pick_id: str, tags: list[str]) -> None:
-    """Replace all tags for a pick (deletes existing tags first, then inserts new ones)."""
-    db = get_supabase()
-    db.table("pick_tags").delete().eq("pick_id", pick_id).execute()
-    rows = [{"pick_id": pick_id, "tag": t.strip()} for t in tags if t.strip()]
-    if rows:
-        db.table("pick_tags").insert(rows).execute()
-
 
 def get_events() -> list[dict]:
     """Return all events ordered by date descending."""
@@ -238,28 +230,11 @@ def get_picks_for_event(event_id: str) -> list[dict]:
     )
     picks = picks_resp.data or []
 
-    # Get tags for all picks
-    pick_ids = [p["pick_id"] for p in picks]
-    tags_by_pick: dict[str, list[str]] = {}
-    if pick_ids:
-        tags_resp = (
-            db.table("pick_tags")
-            .select("pick_id, tag")
-            .in_("pick_id", pick_ids)
-            .execute()
-        )
-        for row in (tags_resp.data or []):
-            tags_by_pick.setdefault(row["pick_id"], []).append(row["tag"])
-
     # Assemble flat rows
     rows = []
     for pick in picks:
         fight = fights.get(pick["fight_id"], {})
-        tags = tags_by_pick.get(pick["pick_id"], [])
-        context_parts = [pick.get("reasoning_notes") or ""]
-        if tags:
-            context_parts.append(", ".join(tags))
-        context = " | ".join(p for p in context_parts if p)
+        context = pick.get("reasoning_notes") or ""
 
         rows.append({
             "date": event.get("date") or "",
@@ -317,10 +292,9 @@ def get_fights_for_event(event_id: str) -> list[dict]:
 
 
 def get_picks_for_fight(fight_id: str) -> list[dict]:
-    """Return raw picks with a 'tags' list for a fight, sorted by analyst_name."""
-    from collections import defaultdict
+    """Return raw picks for a fight, sorted by analyst_name."""
     db = get_supabase()
-    picks = (
+    return (
         db.table("analyst_picks")
         .select("*")
         .eq("fight_id", fight_id)
@@ -328,22 +302,6 @@ def get_picks_for_fight(fight_id: str) -> list[dict]:
         .execute()
         .data or []
     )
-    if not picks:
-        return []
-    pick_ids = [p["pick_id"] for p in picks]
-    tags_rows = (
-        db.table("pick_tags")
-        .select("pick_id, tag")
-        .in_("pick_id", pick_ids)
-        .execute()
-        .data or []
-    )
-    tag_map: dict[str, list[str]] = defaultdict(list)
-    for t in tags_rows:
-        tag_map[t["pick_id"]].append(t["tag"])
-    for p in picks:
-        p["tags"] = tag_map.get(p["pick_id"], [])
-    return picks
 
 
 def update_event(event_id: str, name: str, date: str | None, location: str | None) -> None:
