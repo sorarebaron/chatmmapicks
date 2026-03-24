@@ -284,23 +284,6 @@ with tab_cm:
     else:
         st.info("No method prediction data available.")
 
-    st.divider()
-    st.subheader("Actual Outcome Distribution (all events)")
-
-    # Count each fight once
-    fight_methods: dict[str, str] = {}
-    for r in all_rows:
-        if r["actual_method"] and r["fight_id"] not in fight_methods:
-            fight_methods[r["fight_id"]] = r["actual_method"]
-
-    if fight_methods:
-        dist: dict[str, int] = defaultdict(int)
-        for m in fight_methods.values():
-            dist[m] += 1
-        dist_rows = [{"Method": m, "Fights": c} for m, c in sorted(dist.items(), key=lambda x: -x[1])]
-        st.dataframe(pd.DataFrame(dist_rows), use_container_width=True, hide_index=True)
-    else:
-        st.info("No results recorded yet.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
