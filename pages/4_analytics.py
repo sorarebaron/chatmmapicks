@@ -2,10 +2,10 @@
 Analytics — analyst leaderboard, prediction accuracy, and scorecard breakdowns.
 
 Four tabs:
-  1. Leaderboard        — ranked pick accuracy per analyst
-  2. Confidence & Method — accuracy by confidence tier; method prediction rates
-  3. Event Breakdown    — fight-by-fight consensus and pick detail
-  4. Officials          — referee and judge appearances with scorecard tendencies
+  1. Leaderboard     — ranked pick accuracy per analyst
+  2. Method          — method prediction rates and outcome distribution
+  3. Event Breakdown — fight-by-fight consensus and pick detail
+  4. Officials       — referee and judge appearances with scorecard tendencies
 """
 
 import unicodedata
@@ -113,7 +113,6 @@ def _build_rows(raw: dict) -> list[dict]:
             "bout_order": fight.get("bout_order"),
             "picked_fighter": picked,
             "method_prediction": predicted_method,
-            "confidence_tag": pick.get("confidence_tag") or "",
             "has_result": result is not None,
             "winner": winner,
             "actual_method": actual_method,
@@ -168,7 +167,7 @@ if not any(r["correct"] is not None for r in all_rows):
 
 with st.sidebar:
     st.header("Filters")
-    st.caption("Applies to Leaderboard and Confidence & Method tabs.")
+    st.caption("Applies to Leaderboard and Method tabs.")
 
     all_event_names = sorted({r["event"] for r in all_rows if r["event"]})
     sel_events = st.multiselect("Event", options=all_event_names, default=all_event_names, key="an_ev")
@@ -176,13 +175,6 @@ with st.sidebar:
     all_wc = sorted({r["weight_class"] for r in all_rows if r["weight_class"]})
     sel_wc = st.multiselect("Weight class", options=all_wc, default=all_wc, key="an_wc")
 
-    sel_conf = st.multiselect(
-        "Confidence tier",
-        options=["lean", "confident", "lock"],
-        default=["lean", "confident", "lock"],
-        key="an_conf",
-    )
-    include_no_conf = st.checkbox("Include picks with no confidence tag", value=True, key="an_noc")
     title_only = st.checkbox("Title fights only", value=False, key="an_tf")
 
 
@@ -192,15 +184,6 @@ def _apply_filters(rows: list[dict]) -> list[dict]:
         out = [r for r in out if r["event"] in sel_events]
     if sel_wc:
         out = [r for r in out if r["weight_class"] in sel_wc]
-    conf_set = set(sel_conf)
-    filtered = []
-    for r in out:
-        ct = r["confidence_tag"]
-        if ct in conf_set:
-            filtered.append(r)
-        elif not ct and include_no_conf:
-            filtered.append(r)
-    out = filtered
     if title_only:
         out = [r for r in out if r["title_fight"]]
     return out
@@ -232,7 +215,7 @@ st.divider()
 # ── Tabs ───────────────────────────────────────────────────────────────────────
 
 tab_lb, tab_cm, tab_ev, tab_off = st.tabs(
-    ["Leaderboard", "Confidence & Method", "Event Breakdown", "Officials"]
+    ["Leaderboard", "Method", "Event Breakdown", "Officials"]
 )
 
 
@@ -274,64 +257,32 @@ with tab_lb:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TAB 2 · Confidence & Method
+# TAB 2 · Method
 # ─────────────────────────────────────────────────────────────────────────────
 
 with tab_cm:
-    col_c, col_m = st.columns(2)
-
-    with col_c:
-        st.subheader("Accuracy by Confidence Tier")
-        conf_table = []
-        for level in ["lean", "confident", "lock"]:
-            lvl_rows = [r for r in rows if r["confidence_tag"] == level]
-            c, e = _acc(lvl_rows)
-            if lvl_rows:
-                conf_table.append({
-                    "Tier": level.capitalize(),
-                    "Picks": len(lvl_rows),
-                    "Evaluated": e,
-                    "Correct": c,
-                    "Accuracy": _pct(c, e),
-                })
-        no_conf_rows = [r for r in rows if not r["confidence_tag"]]
-        if no_conf_rows:
-            c, e = _acc(no_conf_rows)
-            conf_table.append({
-                "Tier": "(none)",
-                "Picks": len(no_conf_rows),
-                "Evaluated": e,
-                "Correct": c,
-                "Accuracy": _pct(c, e),
-            })
-        if conf_table:
-            st.dataframe(pd.DataFrame(conf_table), use_container_width=True, hide_index=True)
-        else:
-            st.info("No confidence data available.")
-
-    with col_m:
-        st.subheader("Method Prediction Accuracy")
-        method_table = []
-        for method in ["KO/TKO", "Submission", "Decision", "NC", "DQ"]:
-            predicted = [r for r in rows if r["method_prediction"] == method]
-            if not predicted:
-                continue
-            mc, me = _acc(predicted, "method_correct")
-            actual_ct = sum(
-                1 for fid in {r["fight_id"] for r in all_rows if r["actual_method"] == method}
-            )
-            method_table.append({
-                "Method": method,
-                "Predicted": len(predicted),
-                "Evaluated": me,
-                "Correct": mc,
-                "Accuracy": _pct(mc, me),
-                "Actually Happened": actual_ct,
-            })
-        if method_table:
-            st.dataframe(pd.DataFrame(method_table), use_container_width=True, hide_index=True)
-        else:
-            st.info("No method prediction data available.")
+    st.subheader("Method Prediction Accuracy")
+    method_table = []
+    for method in ["KO/TKO", "Submission", "Decision", "NC", "DQ"]:
+        predicted = [r for r in rows if r["method_prediction"] == method]
+        if not predicted:
+            continue
+        mc, me = _acc(predicted, "method_correct")
+        actual_ct = sum(
+            1 for fid in {r["fight_id"] for r in all_rows if r["actual_method"] == method}
+        )
+        method_table.append({
+            "Method": method,
+            "Predicted": len(predicted),
+            "Evaluated": me,
+            "Correct": mc,
+            "Accuracy": _pct(mc, me),
+            "Actually Happened": actual_ct,
+        })
+    if method_table:
+        st.dataframe(pd.DataFrame(method_table), use_container_width=True, hide_index=True)
+    else:
+        st.info("No method prediction data available.")
 
     st.divider()
     st.subheader("Actual Outcome Distribution (all events)")
@@ -450,7 +401,6 @@ with tab_ev:
                         "Analyst": r["analyst"],
                         "Picked": r["picked_fighter"],
                         "Method": r["method_prediction"] or "—",
-                        "Conf.": r["confidence_tag"].capitalize() if r["confidence_tag"] else "—",
                         "Result": outcome,
                     })
                 st.dataframe(pd.DataFrame(pick_rows), use_container_width=True, hide_index=True)

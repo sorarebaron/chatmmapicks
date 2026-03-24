@@ -34,7 +34,6 @@ from utils.db import (
 # ── constants ─────────────────────────────────────────────────────────────────
 
 METHOD_OPTIONS = ["", "KO/TKO", "Submission", "Decision", "NC", "DQ"]
-CONFIDENCE_OPTIONS = ["", "lean", "confident", "lock"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -121,7 +120,7 @@ def _render_pick(pick: dict) -> None:
             )
 
         # Row 2: pick details
-        p_col4, p_col5, p_col6 = st.columns([2, 1, 1])
+        p_col4, p_col5 = st.columns([2, 1])
         with p_col4:
             p_picked = st.text_input(
                 "Picked to win",
@@ -136,15 +135,6 @@ def _render_pick(pick: dict) -> None:
                 options=METHOD_OPTIONS,
                 index=method_idx,
                 key=f"qc_me_{pick_id}",
-            )
-        with p_col6:
-            raw_conf = pick.get("confidence_tag") or ""
-            conf_idx = CONFIDENCE_OPTIONS.index(raw_conf) if raw_conf in CONFIDENCE_OPTIONS else 0
-            p_conf = st.selectbox(
-                "Confidence",
-                options=CONFIDENCE_OPTIONS,
-                index=conf_idx,
-                key=f"qc_co_{pick_id}",
             )
 
         # Row 3: reasoning
@@ -180,7 +170,7 @@ def _render_pick(pick: dict) -> None:
                             p_url.strip() or None,
                             p_picked.strip(),
                             p_method or None,
-                            p_conf or None,
+                            None,
                             p_notes.strip() or None,
                         )
                         new_tags = [t.strip() for t in p_tags.split(",") if t.strip()]
