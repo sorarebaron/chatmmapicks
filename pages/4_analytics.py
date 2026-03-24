@@ -360,7 +360,8 @@ with tab_ev:
     st.subheader("Fight-by-Fight Breakdown")
     st.caption("Uses all picks and results for the selected event, independent of sidebar filters.")
 
-    ev_options = sorted({r["event"] for r in all_rows if r["event"]})
+    ev_date_map = {r["event"]: r["event_date"] for r in all_rows if r["event"]}
+    ev_options = sorted(ev_date_map, key=lambda e: ev_date_map[e], reverse=True)
     if not ev_options:
         st.info("No events available.")
     else:
