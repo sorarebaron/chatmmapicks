@@ -169,7 +169,8 @@ with st.sidebar:
     st.header("Filters")
     st.caption("Applies to Leaderboard and Method tabs.")
 
-    all_event_names = sorted({r["event"] for r in all_rows if r["event"]})
+    event_date_map = {r["event"]: r["event_date"] for r in all_rows if r["event"]}
+    all_event_names = sorted(event_date_map, key=lambda e: event_date_map[e])
     sel_events = st.multiselect("Event", options=all_event_names, default=all_event_names, key="an_ev")
 
     all_wc = sorted({r["weight_class"] for r in all_rows if r["weight_class"]})
