@@ -60,9 +60,9 @@ st.caption(
 )
 
 # ── Full export with extra columns ────────────────────────────────────────────
-with st.expander("Full export (includes method & confidence)"):
+with st.expander("Full export (includes method)"):
     st.caption("These extra columns are stored in chatmmatracker but not in the original CSV format.")
-    FULL_COLUMNS = CHATMMA_COLUMNS + ["method", "confidence"]
+    FULL_COLUMNS = CHATMMA_COLUMNS + ["method"]
     buf2 = io.StringIO()
     writer2 = csv.DictWriter(buf2, fieldnames=FULL_COLUMNS, extrasaction="ignore")
     writer2.writeheader()

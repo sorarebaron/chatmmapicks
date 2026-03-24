@@ -8,7 +8,6 @@ Schema mapping (ChatMMA original → ChatMMAPicks Supabase):
   predictions.pick ('fighter_a'/'fighter_b') → analyst_picks.picked_fighter (actual name)
   predictions.context_tags (JSON array)      → pick_tags table (separate rows)
   predictions.notes                          → analyst_picks.reasoning_notes
-  predictions.confidence (high/med/low)      → analyst_picks.confidence_tag (lock/confident/lean)
   predictions.method                         → analyst_picks.method_prediction
   analysts.accuracy_rate                     → not yet tracked (defaults to 0)
 """
@@ -62,7 +61,7 @@ class QueryOptimizer:
             db.table("analyst_picks")
             .select(
                 "pick_id, analyst_name, platform, picked_fighter, "
-                "method_prediction, confidence_tag, reasoning_notes"
+                "method_prediction, reasoning_notes"
             )
             .eq("fight_id", fight_id)
             .execute()

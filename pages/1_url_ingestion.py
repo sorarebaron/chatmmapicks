@@ -61,7 +61,6 @@ Return this JSON structure:
           "nickname_used": "string or null",
           "alt_spelling_note": "string or null",
           "method_prediction": "KO/TKO" or "Submission" or "Decision" or "NC" or "DQ" or null,
-          "confidence_tag": "lean / confident / lock",
           "reasoning_notes": "string or null",
           "flag_for_review": false
         }
@@ -70,7 +69,6 @@ Return this JSON structure:
   ]
 }"""
 
-CONFIDENCE_OPTIONS = ["lean", "confident", "lock"]
 METHOD_OPTIONS = ["", "KO/TKO", "Submission", "Decision", "NC", "DQ"]
 FUZZY_THRESHOLD = 85
 FUZZY_MIN_SCORE = 50  # below this the match is too weak to prompt; treat as new fighter
@@ -331,29 +329,14 @@ elif st.session_state.ing_stage == "review_picks":
                     key=f"picked_{ai}_{pi}",
                 )
 
-                c4, c5 = st.columns(2)
-                with c4:
-                    raw_method = normalize_method(pick.get("method_prediction"))
-                    method_idx = METHOD_OPTIONS.index(raw_method) if raw_method in METHOD_OPTIONS else 0
-                    method = st.selectbox(
-                        "Method prediction",
-                        METHOD_OPTIONS,
-                        index=method_idx,
-                        key=f"method_{ai}_{pi}",
-                    )
-                with c5:
-                    raw_conf = pick.get("confidence_tag") or "lean"
-                    conf_idx = (
-                        CONFIDENCE_OPTIONS.index(raw_conf)
-                        if raw_conf in CONFIDENCE_OPTIONS
-                        else 0
-                    )
-                    confidence = st.selectbox(
-                        "Confidence",
-                        CONFIDENCE_OPTIONS,
-                        index=conf_idx,
-                        key=f"conf_{ai}_{pi}",
-                    )
+                raw_method = normalize_method(pick.get("method_prediction"))
+                method_idx = METHOD_OPTIONS.index(raw_method) if raw_method in METHOD_OPTIONS else 0
+                method = st.selectbox(
+                    "Method prediction",
+                    METHOD_OPTIONS,
+                    index=method_idx,
+                    key=f"method_{ai}_{pi}",
+                )
 
                 reasoning = st.text_area(
                     "Reasoning notes",
@@ -412,7 +395,6 @@ elif st.session_state.ing_stage == "review_picks":
                         "weight_class": weight_class.strip() or None,
                         "picked_fighter": picked,
                         "method": method,
-                        "confidence": confidence,
                         "reasoning": reasoning,
                         "tags": [t.strip() for t in tags_raw.split(",") if t.strip()],
                         "name_overrides": name_overrides,
@@ -460,7 +442,6 @@ elif st.session_state.ing_stage == "review_picks":
                         "source_url": st.session_state.get("ing_url", ""),
                         "picked_fighter": picked or None,
                         "method_prediction": pick["method"] or None,
-                        "confidence_tag": pick["confidence"],
                         "reasoning_notes": pick["reasoning"] or None,
                     }
                     pick_id = save_analyst_pick(pick_row)

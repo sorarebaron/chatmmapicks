@@ -232,7 +232,7 @@ def get_picks_for_event(event_id: str) -> list[dict]:
     fight_ids = list(fights.keys())
     picks_resp = (
         db.table("analyst_picks")
-        .select("pick_id, fight_id, analyst_name, platform, source_url, picked_fighter, method_prediction, confidence_tag, reasoning_notes, created_at")
+        .select("pick_id, fight_id, analyst_name, platform, source_url, picked_fighter, method_prediction, reasoning_notes, created_at")
         .in_("fight_id", fight_ids)
         .execute()
     )
@@ -273,7 +273,6 @@ def get_picks_for_event(event_id: str) -> list[dict]:
             "context": context,
             # Extra columns available in the DB but not in the original CSV
             "method": pick.get("method_prediction") or "",
-            "confidence": pick.get("confidence_tag") or "",
         })
 
     # Sort by fight bout_order if available, then analyst name
@@ -379,7 +378,6 @@ def update_pick(
     source_url: str | None,
     picked_fighter: str,
     method_prediction: str | None,
-    confidence_tag: str | None,
     reasoning_notes: str | None,
 ) -> None:
     """Update an analyst pick by pick_id."""
@@ -389,7 +387,6 @@ def update_pick(
         "source_url": source_url or None,
         "picked_fighter": picked_fighter,
         "method_prediction": method_prediction or None,
-        "confidence_tag": confidence_tag or None,
         "reasoning_notes": reasoning_notes or None,
     }).eq("pick_id", pick_id).execute()
 
@@ -580,7 +577,7 @@ def get_all_analytics_data() -> dict:
         db.table("analyst_picks")
         .select(
             "pick_id, fight_id, analyst_name, platform, picked_fighter,"
-            "method_prediction, confidence_tag"
+            "method_prediction"
         )
         .execute()
         .data or []
