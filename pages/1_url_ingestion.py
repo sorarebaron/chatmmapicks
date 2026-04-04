@@ -135,7 +135,7 @@ def call_claude(article_text: str) -> dict:
     client = anthropic.Anthropic(api_key=api_key)
     message = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[{"role": "user", "content": EXTRACTION_PROMPT + "\n\n" + article_text}],
     )
     raw = message.content[0].text.strip()
