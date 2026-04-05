@@ -557,7 +557,7 @@ def get_all_analytics_data() -> dict:
     fights = (
         db.table("fights")
         .select("fight_id, event_id, fighter_a, fighter_b, weight_class, bout_order, title_fight")
-        .execute()
+        .limit(10000).execute()
         .data or []
     )
 
@@ -569,7 +569,7 @@ def get_all_analytics_data() -> dict:
             "judge2_name, judge2_score, judge2_winner,"
             "judge3_name, judge3_score, judge3_winner"
         )
-        .execute()
+        .limit(10000).execute()
         .data or []
     )
 
@@ -579,7 +579,7 @@ def get_all_analytics_data() -> dict:
             "pick_id, fight_id, analyst_name, platform, picked_fighter,"
             "method_prediction"
         )
-        .execute()
+        .limit(10000).execute()
         .data or []
     )
 
