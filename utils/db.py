@@ -557,30 +557,40 @@ def get_all_analytics_data() -> dict:
     fights = (
         db.table("fights")
         .select("fight_id, event_id, fighter_a, fighter_b, weight_class, bout_order, title_fight")
-        .limit(10000).execute()
+        .limit(10000)
+        .execute()
         .data or []
     )
 
-    results = (
-        db.table("results")
-        .select(
-            "fight_id, winner, method, round, time, referee, finish_details,"
-            "judge1_name, judge1_score, judge1_winner,"
-            "judge2_name, judge2_score, judge2_winner,"
-            "judge3_name, judge3_score, judge3_winner"
-        )
-        .limit(10000).execute()
-        .data or []
-    )
+    fight_ids = [f["fight_id"] for f in fights]
 
-    picks = (
-        db.table("analyst_picks")
-        .select(
-            "pick_id, fight_id, analyst_name, platform, picked_fighter,"
-            "method_prediction"
+    # Fetch results and picks filtered by known fight_ids in batches of 400
+    # to avoid URL length limits and bypass any server-side global row cap.
+    results: list[dict] = []
+    picks: list[dict] = []
+    for i in range(0, len(fight_ids), 400):
+        batch = fight_ids[i : i + 400]
+        results += (
+            db.table("results")
+            .select(
+                "fight_id, winner, method, round, time, referee, finish_details,"
+                "judge1_name, judge1_score, judge1_winner,"
+                "judge2_name, judge2_score, judge2_winner,"
+                "judge3_name, judge3_score, judge3_winner"
+            )
+            .in_("fight_id", batch)
+            .execute()
+            .data or []
         )
-        .limit(10000).execute()
-        .data or []
-    )
+        picks += (
+            db.table("analyst_picks")
+            .select(
+                "pick_id, fight_id, analyst_name, platform, picked_fighter,"
+                "method_prediction"
+            )
+            .in_("fight_id", batch)
+            .execute()
+            .data or []
+        )
 
     return {"events": events, "fights": fights, "results": results, "picks": picks}
