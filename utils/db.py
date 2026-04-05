@@ -564,12 +564,14 @@ def get_all_analytics_data() -> dict:
 
     fight_ids = [f["fight_id"] for f in fights]
 
-    # Fetch results and picks filtered by known fight_ids in batches of 400
-    # to avoid URL length limits and bypass any server-side global row cap.
+    # Fetch results and picks in small batches of 20 fight_ids each.
+    # Supabase's PostgREST caps each response at ~1000 rows regardless of
+    # .limit() — batching by 20 ensures each request stays well under that
+    # ceiling (20 fights × ~20 analysts = ~400 rows max per request).
     results: list[dict] = []
     picks: list[dict] = []
-    for i in range(0, len(fight_ids), 400):
-        batch = fight_ids[i : i + 400]
+    for i in range(0, len(fight_ids), 20):
+        batch = fight_ids[i : i + 20]
         results += (
             db.table("results")
             .select(
