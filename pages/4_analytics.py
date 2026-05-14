@@ -417,6 +417,8 @@ with tab_off:
         method = (res.get("method") or "").strip()
         rnd = res.get("round")
 
+        bout_order = fight.get("bout_order")
+
         ref = (res.get("referee") or "").strip()
         if ref:
             if ref not in referees:
@@ -424,6 +426,7 @@ with tab_off:
             referees[ref].append({
                 "event": event_label,
                 "event_date": event_date,
+                "bout_order": bout_order,
                 "fight": fight_label,
                 "winner": actual_winner,
                 "method": method,
@@ -440,6 +443,7 @@ with tab_off:
                 judges[jname].append({
                     "event": event_label,
                     "event_date": event_date,
+                    "bout_order": bout_order,
                     "fight": fight_label,
                     "score": jscore,
                     "scored_for": jwinner,
@@ -480,7 +484,7 @@ with tab_off:
             for name, fights in sorted(judges.items(), key=lambda x: -len(x[1])):
                 with st.expander(f"**{name}** · {len(fights)} fight(s)", expanded=False):
                     detail_rows = []
-                    for f in sorted(fights, key=lambda x: x["event_date"], reverse=True):
+                    for f in sorted(fights, key=lambda x: (x["event_date"] or "", -(x["bout_order"] if x["bout_order"] is not None else 999)), reverse=True):
                         if f["scored_for"] and f["actual_winner"] and f["actual_winner"] not in ("", "Draw", "NC", "NC / Draw"):
                             correct_icon = "✓" if f["scored_for"] == f["actual_winner"] else "✗"
                         else:
@@ -522,7 +526,7 @@ with tab_off:
             for name, fights in sorted(referees.items(), key=lambda x: -len(x[1])):
                 with st.expander(f"**{name}** · {len(fights)} fight(s)", expanded=False):
                     detail_rows = []
-                    for f in sorted(fights, key=lambda x: x["event_date"], reverse=True):
+                    for f in sorted(fights, key=lambda x: (x["event_date"] or "", -(x["bout_order"] if x["bout_order"] is not None else 999)), reverse=True):
                         detail_rows.append({
                             "Event": f["event"],
                             "Fight": f["fight"],
