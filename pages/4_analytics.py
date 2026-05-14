@@ -412,6 +412,7 @@ with tab_off:
         event = event_map_off.get(fight.get("event_id"), {})
         fight_label = f"{fight.get('fighter_a', '')} vs {fight.get('fighter_b', '')}"
         event_label = event.get("name", "")
+        event_date = event.get("date", "") or ""
         actual_winner = (res.get("winner") or "").strip()
         method = (res.get("method") or "").strip()
         rnd = res.get("round")
@@ -422,6 +423,7 @@ with tab_off:
                 referees[ref] = []
             referees[ref].append({
                 "event": event_label,
+                "event_date": event_date,
                 "fight": fight_label,
                 "winner": actual_winner,
                 "method": method,
@@ -437,6 +439,7 @@ with tab_off:
                     judges[jname] = []
                 judges[jname].append({
                     "event": event_label,
+                    "event_date": event_date,
                     "fight": fight_label,
                     "score": jscore,
                     "scored_for": jwinner,
@@ -477,7 +480,7 @@ with tab_off:
             for name, fights in sorted(judges.items(), key=lambda x: -len(x[1])):
                 with st.expander(f"**{name}** · {len(fights)} fight(s)", expanded=False):
                     detail_rows = []
-                    for f in sorted(fights, key=lambda x: (x["event"], x["fight"])):
+                    for f in sorted(fights, key=lambda x: x["event_date"], reverse=True):
                         if f["scored_for"] and f["actual_winner"] and f["actual_winner"] not in ("", "Draw", "NC", "NC / Draw"):
                             correct_icon = "✓" if f["scored_for"] == f["actual_winner"] else "✗"
                         else:
@@ -519,7 +522,7 @@ with tab_off:
             for name, fights in sorted(referees.items(), key=lambda x: -len(x[1])):
                 with st.expander(f"**{name}** · {len(fights)} fight(s)", expanded=False):
                     detail_rows = []
-                    for f in sorted(fights, key=lambda x: (x["event"], x["fight"])):
+                    for f in sorted(fights, key=lambda x: x["event_date"], reverse=True):
                         detail_rows.append({
                             "Event": f["event"],
                             "Fight": f["fight"],
