@@ -459,7 +459,7 @@ with tab_off:
                 scoreable = [
                     f for f in fights
                     if f["scored_for"] and f["actual_winner"]
-                    and f["actual_winner"] not in ("", "Draw", "NC")
+                    and f["actual_winner"] not in ("", "Draw", "NC", "NC / Draw")
                 ]
                 correct = sum(1 for f in scoreable if f["scored_for"] == f["actual_winner"])
                 accuracy = f"{correct}/{len(scoreable)} ({correct/len(scoreable):.0%})" if scoreable else "—"
@@ -478,7 +478,7 @@ with tab_off:
                 with st.expander(f"**{name}** · {len(fights)} fight(s)", expanded=False):
                     detail_rows = []
                     for f in sorted(fights, key=lambda x: (x["event"], x["fight"])):
-                        if f["scored_for"] and f["actual_winner"] and f["actual_winner"] not in ("", "Draw", "NC"):
+                        if f["scored_for"] and f["actual_winner"] and f["actual_winner"] not in ("", "Draw", "NC", "NC / Draw"):
                             correct_icon = "✓" if f["scored_for"] == f["actual_winner"] else "✗"
                         else:
                             correct_icon = "—"
