@@ -296,6 +296,37 @@ def _render_fight(fight: dict, all_fights: list[dict]) -> None:
                     key=f"qc_bo_{fight_id}",
                 )
 
+            st.markdown("**Odds** (American format, e.g. -150 or +130)")
+            o_col1, o_col2, o_col3, o_col4 = st.columns(4)
+            with o_col1:
+                f_a_win = st.number_input(
+                    f"{fight.get('fighter_a', 'Fighter A')} Win",
+                    step=1,
+                    value=fight.get("fighter_a_win_odds"),
+                    key=f"qc_a_win_{fight_id}",
+                )
+            with o_col2:
+                f_a_itd = st.number_input(
+                    f"{fight.get('fighter_a', 'Fighter A')} ITD",
+                    step=1,
+                    value=fight.get("fighter_a_itd_odds"),
+                    key=f"qc_a_itd_{fight_id}",
+                )
+            with o_col3:
+                f_b_win = st.number_input(
+                    f"{fight.get('fighter_b', 'Fighter B')} Win",
+                    step=1,
+                    value=fight.get("fighter_b_win_odds"),
+                    key=f"qc_b_win_{fight_id}",
+                )
+            with o_col4:
+                f_b_itd = st.number_input(
+                    f"{fight.get('fighter_b', 'Fighter B')} ITD",
+                    step=1,
+                    value=fight.get("fighter_b_itd_odds"),
+                    key=f"qc_b_itd_{fight_id}",
+                )
+
             if st.button("Save fight", key=f"qc_save_fight_{fight_id}"):
                 if not f_fighter_a.strip() or not f_fighter_b.strip():
                     st.error("Fighter names cannot be blank.")
@@ -306,6 +337,10 @@ def _render_fight(fight: dict, all_fights: list[dict]) -> None:
                         f_fighter_b.strip(),
                         f_weight.strip() or None,
                         int(f_bout_order) if f_bout_order is not None else None,
+                        int(f_a_win) if f_a_win is not None else None,
+                        int(f_b_win) if f_b_win is not None else None,
+                        int(f_a_itd) if f_a_itd is not None else None,
+                        int(f_b_itd) if f_b_itd is not None else None,
                     )
                     st.success("Fight saved.")
                     st.rerun()
