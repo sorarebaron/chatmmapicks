@@ -165,7 +165,6 @@ def _render_pick(pick: dict) -> None:
                             p_notes.strip() or None,
                         )
                         st.toast("Pick saved.", icon="✅")
-                        st.rerun()
                     except Exception as exc:
                         msg = str(exc).lower()
                         if "unique" in msg or "duplicate" in msg:
@@ -343,7 +342,6 @@ def _render_fight(fight: dict, all_fights: list[dict]) -> None:
                         int(f_b_itd) if f_b_itd is not None else None,
                     )
                     st.toast("Fight saved.", icon="✅")
-                    st.rerun()
 
         # ── Merge fight (shown first so it's visible immediately on open) ─────
 
@@ -515,7 +513,6 @@ with tab1:
                     ev_location.strip() or None,
                 )
                 st.toast("Event saved.", icon="✅")
-                st.rerun()
 
     # Fights list
     st.divider()
