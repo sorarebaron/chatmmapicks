@@ -267,7 +267,7 @@ def _render_fight(fight: dict, all_fights: list[dict]) -> None:
 
         # ── Fight metadata editor ─────────────────────────────────────────────
 
-        with st.container(border=True):
+        with st.form(key=f"qc_fight_form_{fight_id}", border=True):
             st.markdown("**Fight details**")
             f_col1, f_col2 = st.columns(2)
             with f_col1:
@@ -327,7 +327,7 @@ def _render_fight(fight: dict, all_fights: list[dict]) -> None:
                     key=f"qc_b_itd_{fight_id}",
                 )
 
-            if st.button("Save fight", key=f"qc_save_fight_{fight_id}"):
+            if st.form_submit_button("Save fight"):
                 if not f_fighter_a.strip() or not f_fighter_b.strip():
                     st.error("Fighter names cannot be blank.")
                 else:
