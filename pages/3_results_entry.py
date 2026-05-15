@@ -39,6 +39,7 @@ def _result_summary(result: dict) -> str:
     return "  ·  ".join(parts) if parts else "(no result recorded)"
 
 
+@st.fragment
 def _render_fight_result(fight: dict) -> None:
     """Render a fight card with result entry form."""
     fight_id = fight["fight_id"]
