@@ -234,7 +234,7 @@ def _render_fight_result(fight: dict) -> None:
                             judge3_score=r_j3_score.strip() if r_j3_score else None,
                             judge3_winner=r_j3_winner or None,
                         )
-                        st.success("Result saved.")
+                        st.toast("Result saved.", icon="✅")
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Error saving result: {exc}")
