@@ -164,7 +164,7 @@ def _render_pick(pick: dict) -> None:
                             None,
                             p_notes.strip() or None,
                         )
-                        st.success("Pick saved.")
+                        st.toast("Pick saved.", icon="✅")
                         st.rerun()
                     except Exception as exc:
                         msg = str(exc).lower()
@@ -342,7 +342,7 @@ def _render_fight(fight: dict, all_fights: list[dict]) -> None:
                         int(f_a_itd) if f_a_itd is not None else None,
                         int(f_b_itd) if f_b_itd is not None else None,
                     )
-                    st.success("Fight saved.")
+                    st.toast("Fight saved.", icon="✅")
                     st.rerun()
 
         # ── Merge fight (shown first so it's visible immediately on open) ─────
@@ -514,7 +514,7 @@ with tab1:
                     date_str,
                     ev_location.strip() or None,
                 )
-                st.success("Event saved.")
+                st.toast("Event saved.", icon="✅")
                 st.rerun()
 
     # Fights list
