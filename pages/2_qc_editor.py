@@ -161,7 +161,6 @@ def _render_pick(pick: dict) -> None:
                             p_url.strip() or None,
                             p_picked.strip(),
                             p_method or None,
-                            None,
                             p_notes.strip() or None,
                         )
                         st.toast("Pick saved.", icon="✅")
