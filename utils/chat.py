@@ -477,10 +477,61 @@ class QueryOptimizer:
         underdog_picks.sort(key=lambda x: x["value_score"], reverse=True)
         return {"event": event["name"], "underdog_picks": underdog_picks}
 
-    def get_draftkings_lineup_data(self, event_name: str) -> dict | None:
+    @staticmethod
+    def _score_fighter_dk(fighter: dict) -> float:
         """
-        Fetch all fighters for an event that have salary data entered,
-        combined with analyst consensus and odds for lineup building.
+        Score a fighter's DK value: consensus strength + finish upside.
+        Higher = better play. Used to pre-select optimal lineups in Python.
+        """
+        score = 0.0
+        # Analyst consensus (0–60 pts)
+        score += fighter["consensus_pct"] * 0.6
+        # Finish upside — early finishes dominate DK scoring (0–40 pts)
+        if fighter["total_picks"] > 0:
+            score += (fighter["finish_picks"] / fighter["total_picks"]) * 40
+        # Small bonus for underdog with analyst backing (value)
+        if fighter.get("win_odds") is not None and fighter["win_odds"] > 0:
+            score += 5
+        return score
+
+    @staticmethod
+    def _build_optimal_lineup(
+        fighters: list[dict], salary_cap: int
+    ) -> list[dict] | None:
+        """
+        Return the highest-scoring valid 6-fighter lineup under salary_cap.
+        Searches C(min(len,15), 6) combinations — at most 5,005 iterations.
+        """
+        from itertools import combinations
+
+        # Score and take top 15 to keep search fast
+        scored = sorted(
+            fighters,
+            key=QueryOptimizer._score_fighter_dk,
+            reverse=True,
+        )
+        pool = scored[:15]
+
+        best_score = -1.0
+        best_lineup: list[dict] | None = None
+
+        for combo in combinations(pool, 6):
+            total_sal = sum(f["salary"] for f in combo)
+            if total_sal > salary_cap:
+                continue
+            score = sum(QueryOptimizer._score_fighter_dk(f) for f in combo)
+            if score > best_score:
+                best_score = score
+                best_lineup = list(combo)
+
+        return best_lineup
+
+    def get_draftkings_lineup_data(
+        self, event_name: str, salary_cap: int = 50_000
+    ) -> dict | None:
+        """
+        Fetch fighters with salary data, compute the optimal lineup in Python,
+        and return both for use in the prompt.
         """
         event = self._get_event(event_name)
         if not event:
@@ -533,7 +584,13 @@ class QueryOptimizer:
                     "itd_odds": fight.get(itd_key),
                 })
 
-        return {"event": event["name"], "fighters": fighters}
+        optimal = self._build_optimal_lineup(fighters, salary_cap) if len(fighters) >= 6 else None
+        return {
+            "event": event["name"],
+            "fighters": fighters,
+            "optimal_lineup": optimal,
+            "salary_cap": salary_cap,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -773,79 +830,68 @@ RESPONSE:
     def build_draftkings_prompt(
         context: dict, user_question: str, salary_cap: int = 50_000
     ) -> str:
-        fighters = context["fighters"]
+        optimal = context.get("optimal_lineup") or []
+        all_fighters = context.get("fighters", [])
 
-        prompt = f"""You are ChatMMAPicks, an AI that builds optimized DraftKings MMA lineups using analyst consensus data, betting odds, and salary information stored in our database.
+        # Pre-compute totals in Python — Claude must NOT redo this math
+        total_salary = sum(f["salary"] for f in optimal)
+        remaining = salary_cap - total_salary
+
+        fighters_with_no_salary = [
+            f for f in all_fighters
+            if f not in optimal  # show full pool note only when relevant
+        ]
+
+        prompt = f"""You are ChatMMAPicks, an AI that explains DraftKings MMA lineups.
 
 USER QUESTION: {user_question}
 
 EVENT: {context['event']}
-SALARY CAP: ${salary_cap:,} for 6 fighters
+SALARY CAP: {salary_cap} for 6 fighters
 
-DRAFTKINGS MMA SCORING RULES:
-Moves:
-  Strikes            +0.2 pts
-  Significant Strike +0.2 pts  (a sig strike counts as both → 0.4 pts total)
-  Takedown           +5 pts
-  Reversal/Sweep     +5 pts
-  Knockdown          +10 pts
-  Control Time       +0.03 pts/sec
+DRAFTKINGS MMA SCORING (for your reference when explaining picks):
+  Strikes +0.2 | Significant Strikes +0.2 (sig strike = 0.4 total)
+  Takedown +5 | Reversal/Sweep +5 | Knockdown +10 | Control Time +0.03/sec
+  Finish Bonuses: R1 Win +90 (+25 Quick Win if <=60 sec) | R2 Win +70 | R3 Win +45 | R4/R5 Win +40 | Decision Win +30
 
-Fight Conclusion Bonuses:
-  1st Round Win      +90 pts  (+25 Quick Win bonus if finished in ≤60 sec)
-  2nd Round Win      +70 pts
-  3rd Round Win      +45 pts
-  4th/5th Round Win  +40 pts
-  Decision Win       +30 pts
+THE OPTIMAL LINEUP HAS ALREADY BEEN COMPUTED FOR YOU.
+Do NOT recalculate salaries or suggest alternatives. Simply present and explain this lineup.
 
-KEY INSIGHT: A 1st-round finish can add 90–115 bonus points vs. only 30 for a decision.
-Fighters with KO/TKO or Submission upside have dramatically higher ceilings.
-
-AVAILABLE FIGHTERS WITH SALARY DATA:
+OPTIMAL LINEUP (confirmed under cap):
 """
-        if not fighters:
-            prompt += "\nNo salary data has been entered for this event yet. Add salaries via the QC / Editor page.\n"
+        if not optimal:
+            prompt += "\nInsufficient salary data to compute a lineup.\n"
         else:
-            for f in sorted(fighters, key=lambda x: x["salary"], reverse=True):
-                win_str = f"Win: {_fmt_odds(f['win_odds'])}" if f["win_odds"] is not None else ""
-                itd_str = f" | ITD: {_fmt_odds(f['itd_odds'])}" if f["itd_odds"] is not None else ""
-                if f["total_picks"] > 0:
-                    consensus_str = (
-                        f"{f['pick_count']}/{f['total_picks']} analysts "
-                        f"({f['consensus_pct']:.0f}%)"
-                    )
-                else:
-                    consensus_str = "no picks data"
+            for i, f in enumerate(optimal, 1):
+                win_str = f"Win {_fmt_odds(f['win_odds'])}" if f["win_odds"] is not None else ""
+                itd_str = f" | ITD {_fmt_odds(f['itd_odds'])}" if f["itd_odds"] is not None else ""
+                consensus_str = (
+                    f"{f['pick_count']}/{f['total_picks']} analysts ({f['consensus_pct']:.0f}%)"
+                    if f["total_picks"] > 0 else "no picks data"
+                )
                 method_str = (
                     ", ".join(f"{m}: {c}" for m, c in f["method_counts"].items())
-                    if f["method_counts"]
-                    else "no method data"
+                    if f["method_counts"] else "no method data"
                 )
                 prompt += (
-                    f"\n• {f['fighter']} (vs {f['opponent']}) — ${f['salary']:,}\n"
-                    f"  Consensus: {consensus_str} | {win_str}{itd_str}\n"
-                    f"  Predicted methods: {method_str}\n"
+                    f"{i}. {f['fighter']} (vs {f['opponent']}) — salary {f['salary']}\n"
+                    f"   Consensus: {consensus_str} | {win_str}{itd_str}\n"
+                    f"   Predicted methods: {method_str}\n"
                 )
 
+            prompt += (
+                f"\nTOTAL SALARY USED: {total_salary} "
+                f"(cap remaining: {remaining})\n"
+            )
+
         prompt += f"""
-LINEUP BUILDING INSTRUCTIONS:
-1. Select exactly 6 fighters with a combined salary AT OR UNDER ${salary_cap:,}.
-2. Maximize ceiling: heavily favor fighters predicted to win by KO/TKO or Submission, especially in early rounds.
-3. Use a mix of:
-   - 2-3 "anchors": high-consensus favorites who are safe floor plays
-   - 2-3 "upside plays": fighters with finish upside, even if lower consensus
-4. Use betting odds to validate picks — identify cases where analysts back a market underdog (extra value).
-5. For each fighter selected, give one sentence explaining the pick (consensus strength, finish upside, or salary value).
-6. Show the total salary used and cap space remaining.
-7. If salary data is missing for some fighters on the card, flag it.
-
-RESPONSE FORMAT:
-Lineup (6 fighters):
-1. [Fighter] — $[salary] — [one-sentence reasoning]
-...
-
-Total salary: $XX,XXX / ${ salary_cap:,} (${salary_cap:,} - total remaining)
-Strategy: [one sentence on overall lineup construction]
+INSTRUCTIONS:
+1. Present the lineup above exactly as given — do not swap or recalculate.
+2. For each fighter write one sentence explaining their value: consensus strength, finish upside (critical for DK scoring), odds context, or salary efficiency.
+3. After the lineup, write one short paragraph on overall lineup strategy (anchors vs upside plays).
+4. State the total salary and remaining cap at the end.
+5. If some fighters on the event card are missing salary data, mention that at the end as a brief note.
+6. Do not use dollar signs ($) in front of numbers — write salaries as plain numbers (e.g. "9,500") to avoid formatting issues.
 
 RESPONSE:
 """
@@ -1119,7 +1165,7 @@ class ChatMMABot:
                 "metadata": {"query_type": "missing_event"},
             }
 
-        context = self.optimizer.get_draftkings_lineup_data(event_name)
+        context = self.optimizer.get_draftkings_lineup_data(event_name, salary_cap)
         if not context:
             return {
                 "answer": f"I don't have data for **{event_name}** yet.",
@@ -1136,8 +1182,18 @@ class ChatMMABot:
                 "metadata": {"query_type": "no_salary_data"},
             }
 
+        if not context.get("optimal_lineup"):
+            return {
+                "answer": (
+                    f"Found salary data for **{event_name}**, but could not build a valid "
+                    f"6-fighter lineup under {salary_cap:,}. "
+                    "Try checking that salaries are entered for at least 6 fighters."
+                ),
+                "metadata": {"query_type": "no_valid_lineup"},
+            }
+
         prompt = self.generator.build_draftkings_prompt(context, question, salary_cap)
-        answer, cost = self._call_claude(prompt, max_tokens=1200)
+        answer, cost = self._call_claude(prompt, max_tokens=1400)
         return {
             "answer": answer,
             "metadata": {"query_type": "draftkings_lineup", "cost_estimate": cost},
