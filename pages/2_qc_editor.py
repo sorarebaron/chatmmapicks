@@ -325,6 +325,27 @@ def _render_fight(fight: dict, all_fights: list[dict]) -> None:
                     key=f"qc_b_itd_{fight_id}",
                 )
 
+            st.markdown("**DraftKings Salary** (e.g. 7800)")
+            s_col1, s_col2 = st.columns(2)
+            with s_col1:
+                f_a_salary = st.number_input(
+                    f"{fight.get('fighter_a', 'Fighter A')} Salary",
+                    min_value=1000,
+                    max_value=15000,
+                    step=100,
+                    value=fight.get("fighter_a_salary"),
+                    key=f"qc_a_sal_{fight_id}",
+                )
+            with s_col2:
+                f_b_salary = st.number_input(
+                    f"{fight.get('fighter_b', 'Fighter B')} Salary",
+                    min_value=1000,
+                    max_value=15000,
+                    step=100,
+                    value=fight.get("fighter_b_salary"),
+                    key=f"qc_b_sal_{fight_id}",
+                )
+
             if st.form_submit_button("Save fight"):
                 if not f_fighter_a.strip() or not f_fighter_b.strip():
                     st.error("Fighter names cannot be blank.")
@@ -339,6 +360,8 @@ def _render_fight(fight: dict, all_fights: list[dict]) -> None:
                         int(f_b_win) if f_b_win is not None else None,
                         int(f_a_itd) if f_a_itd is not None else None,
                         int(f_b_itd) if f_b_itd is not None else None,
+                        int(f_a_salary) if f_a_salary is not None else None,
+                        int(f_b_salary) if f_b_salary is not None else None,
                     )
                     st.toast("Fight saved.", icon="✅")
 
