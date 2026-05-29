@@ -365,6 +365,8 @@ def update_fight(
     fighter_b_win_odds: int | None = None,
     fighter_a_itd_odds: int | None = None,
     fighter_b_itd_odds: int | None = None,
+    fighter_a_salary: int | None = None,
+    fighter_b_salary: int | None = None,
 ) -> None:
     """Update fight metadata fields."""
     get_supabase().table("fights").update({
@@ -376,6 +378,8 @@ def update_fight(
         "fighter_b_win_odds": fighter_b_win_odds,
         "fighter_a_itd_odds": fighter_a_itd_odds,
         "fighter_b_itd_odds": fighter_b_itd_odds,
+        "fighter_a_salary": fighter_a_salary,
+        "fighter_b_salary": fighter_b_salary,
     }).eq("fight_id", fight_id).execute()
 
 
@@ -564,7 +568,7 @@ def get_all_analytics_data() -> dict:
 
     fights = (
         db.table("fights")
-        .select("fight_id, event_id, fighter_a, fighter_b, weight_class, bout_order, title_fight, fighter_a_win_odds, fighter_b_win_odds, fighter_a_itd_odds, fighter_b_itd_odds")
+        .select("fight_id, event_id, fighter_a, fighter_b, weight_class, bout_order, title_fight, fighter_a_win_odds, fighter_b_win_odds, fighter_a_itd_odds, fighter_b_itd_odds, fighter_a_salary, fighter_b_salary")
         .limit(10000)
         .execute()
         .data or []
