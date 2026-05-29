@@ -48,7 +48,8 @@ def _odds_favorite(odds_a: int | None, odds_b: int | None) -> str | None:
 # Shared SELECT strings
 _FIGHT_SELECT = (
     "fight_id, fighter_a, fighter_b, weight_class, bout_order, "
-    "fighter_a_win_odds, fighter_b_win_odds, fighter_a_itd_odds, fighter_b_itd_odds"
+    "fighter_a_win_odds, fighter_b_win_odds, fighter_a_itd_odds, fighter_b_itd_odds, "
+    "fighter_a_salary, fighter_b_salary"
 )
 _FIGHT_SELECT_WITH_EVENT = (
     "fight_id, fighter_a, fighter_b, weight_class, bout_order, "
