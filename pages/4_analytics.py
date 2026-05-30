@@ -93,10 +93,20 @@ def _build_rows(raw: dict) -> list[dict]:
                 correct = _norm(winner) == _norm(picked)
 
         # Method prediction correctness:
-        #   None  = no result yet, or either side has no method data
+        #   None  = no result yet, or couldn't resolve fighter
+        #   True  = analyst predicted the correct method AND the correct fighter
+        #   False = wrong method, or right method but wrong fighter
+        #
+        # For NC/Draw fights there is no winner, so method alone is evaluated.
         method_correct: bool | None = None
         if result and actual_method and predicted_method:
-            method_correct = actual_method.lower() == predicted_method.lower()
+            method_match = actual_method.lower() == predicted_method.lower()
+            if is_nc:
+                # No winner — method prediction stands on its own
+                method_correct = method_match
+            elif correct is not None:
+                # Must predict both the right winner AND the right method
+                method_correct = method_match and correct
 
         rows.append({
             "pick_id": pick["pick_id"],
