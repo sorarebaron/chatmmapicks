@@ -8,22 +8,11 @@ underdog analysis, and general MMA queries.
 
 import streamlit as st
 
+from utils.config import get_anthropic_api_key
+
 # ── API key check ────────────────────────────────────────────────────────────
 
-def _get_api_key() -> str | None:
-    # Support both nested [anthropic] section and flat ANTHROPIC_API_KEY,
-    # matching the same pattern used by pages/1_url_ingestion.py.
-    try:
-        if "anthropic" in st.secrets:
-            return st.secrets["anthropic"]["api_key"]
-        if "ANTHROPIC_API_KEY" in st.secrets:
-            return st.secrets["ANTHROPIC_API_KEY"]
-    except Exception:
-        pass
-    return None
-
-
-api_key = _get_api_key()
+api_key = get_anthropic_api_key()
 
 if not api_key:
     st.title("Chat")
@@ -119,7 +108,13 @@ if prompt := st.chat_input("Ask about any fight or event…"):
     with st.chat_message("assistant"):
         with st.spinner("Analyzing predictions…"):
             try:
-                result = bot.answer_question(prompt)
+                # Prior turns (everything before the message just appended),
+                # so follow-ups like "what about the co-main?" have context.
+                history = [
+                    {"role": m["role"], "content": m["content"]}
+                    for m in st.session_state.chat_messages[:-1]
+                ]
+                result = bot.answer_question(prompt, history=history)
                 answer = result["answer"]
                 cost = result.get("metadata", {}).get("cost_estimate")
 

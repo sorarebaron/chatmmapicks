@@ -1,5 +1,8 @@
-streamlit>=1.36.0
-supabase>=2.0.0
-anthropic>=0.40.0
-trafilatura>=1.12.0
-rapidfuzz>=3.0.0
+# Pinned with compatible-release (~=) so Streamlit Cloud rebuilds can't pull
+# a breaking major/minor bump while you sleep. To lock exact versions instead,
+# run `pip freeze` in a working environment and replace these lines.
+streamlit~=1.41
+supabase~=2.10
+anthropic~=0.40
+trafilatura~=1.12
+rapidfuzz~=3.9

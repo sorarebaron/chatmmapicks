@@ -20,6 +20,12 @@ import streamlit as st
 from anthropic import Anthropic
 from rapidfuzz import fuzz
 
+from utils.config import (
+    CHAT_HISTORY_TURNS,
+    CHAT_MODEL,
+    CHAT_PRICE_INPUT_PER_MTOK,
+    CHAT_PRICE_OUTPUT_PER_MTOK,
+)
 from utils.db import get_supabase
 
 
@@ -69,6 +75,19 @@ class QueryOptimizer:
 
     def _get_event(self, event_name: str) -> dict | None:
         db = get_supabase()
+        # 1. Exact (case-insensitive) match first — prevents "UFC 31" from
+        #    silently resolving to UFC 310/311/319 via substring matching.
+        resp = (
+            db.table("events")
+            .select("event_id, name, date, location")
+            .ilike("name", event_name)
+            .order("date", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if resp.data:
+            return resp.data[0]
+        # 2. Fall back to substring match for partial names ("Vegas 100").
         resp = (
             db.table("events")
             .select("event_id, name, date, location")
@@ -501,6 +520,11 @@ class QueryOptimizer:
         """
         Return the highest-scoring valid 6-fighter lineup under salary_cap.
         Searches C(min(len,15), 6) combinations — at most 5,005 iterations.
+
+        Constraints enforced:
+        - total salary <= salary_cap
+        - no two fighters from the same fight (DraftKings prohibits rostering
+          opponents, and one of them is guaranteed to lose anyway)
         """
         from itertools import combinations
 
@@ -518,6 +542,9 @@ class QueryOptimizer:
         for combo in combinations(pool, 6):
             total_sal = sum(f["salary"] for f in combo)
             if total_sal > salary_cap:
+                continue
+            # Reject lineups containing both fighters from the same fight
+            if len({f["fight_id"] for f in combo}) < len(combo):
                 continue
             score = sum(QueryOptimizer._score_fighter_dk(f) for f in combo)
             if score > best_score:
@@ -574,6 +601,7 @@ class QueryOptimizer:
                 fighters.append({
                     "fighter": fighter,
                     "opponent": opp,
+                    "fight_id": fight["fight_id"],
                     "salary": salary,
                     "pick_count": len(picks_for),
                     "total_picks": total,
@@ -907,7 +935,7 @@ class ChatMMABot:
 
     def __init__(self, api_key: str):
         self.client = Anthropic(api_key=api_key)
-        self.model = "claude-sonnet-4-6"
+        self.model = CHAT_MODEL
         self.optimizer = QueryOptimizer()
         self.generator = PromptGenerator()
 
@@ -1029,7 +1057,15 @@ class ChatMMABot:
 
     # ── query handlers ───────────────────────────────────────────────────────
 
-    def answer_question(self, user_question: str) -> dict:
+    def answer_question(
+        self, user_question: str, history: list[dict] | None = None
+    ) -> dict:
+        """Answer a question, optionally with recent chat history for context.
+
+        `history` is a list of {"role": "user"|"assistant", "content": str}
+        dicts (most recent last). It lets follow-ups like "what about the
+        co-main?" resolve against the previous exchange.
+        """
         query_type, details = self.detect_query_type(user_question)
         handlers = {
             "fight_specific":    self._handle_fight_specific,
@@ -1039,18 +1075,30 @@ class ChatMMABot:
             "draftkings_lineup": self._handle_draftkings_lineup,
             "general":           self._handle_general,
         }
-        return handlers[query_type](user_question, details)
+        return handlers[query_type](user_question, details, history=history)
 
-    def _call_claude(self, prompt: str, max_tokens: int = 800) -> tuple[str, dict]:
+    def _call_claude(
+        self,
+        prompt: str,
+        max_tokens: int = 800,
+        history: list[dict] | None = None,
+    ) -> tuple[str, dict]:
+        messages: list[dict] = []
+        if history:
+            # Keep only the most recent turns, and only the fields the API needs.
+            for m in history[-CHAT_HISTORY_TURNS:]:
+                if m.get("role") in ("user", "assistant") and m.get("content"):
+                    messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": prompt})
         response = self.client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
         )
         cost = self._estimate_cost(response.usage)
         return response.content[0].text, cost
 
-    def _handle_fight_specific(self, question: str, details: dict) -> dict:
+    def _handle_fight_specific(self, question: str, details: dict, history: list[dict] | None = None) -> dict:
         fa, fb = details["fighter_a"], details["fighter_b"]
         fight = self.optimizer.get_fight_by_fighters(fa, fb, details.get("event_name"))
 
@@ -1075,7 +1123,7 @@ class ChatMMABot:
             }
 
         prompt = self.generator.build_fight_analysis_prompt(context, question)
-        answer, cost = self._call_claude(prompt, max_tokens=900)
+        answer, cost = self._call_claude(prompt, max_tokens=900, history=history)
         return {
             "answer": answer,
             "metadata": {
@@ -1085,7 +1133,7 @@ class ChatMMABot:
             },
         }
 
-    def _handle_inside_distance(self, question: str, details: dict) -> dict:
+    def _handle_inside_distance(self, question: str, details: dict, history: list[dict] | None = None) -> dict:
         event_name = details.get("event_name")
         if not event_name:
             return {
@@ -1099,13 +1147,13 @@ class ChatMMABot:
                 "metadata": {"query_type": "event_not_found"},
             }
         prompt = self.generator.build_inside_distance_prompt(context, question)
-        answer, cost = self._call_claude(prompt, max_tokens=800)
+        answer, cost = self._call_claude(prompt, max_tokens=800, history=history)
         return {
             "answer": answer,
             "metadata": {"query_type": "inside_distance", "cost_estimate": cost},
         }
 
-    def _handle_consensus_picks(self, question: str, details: dict) -> dict:
+    def _handle_consensus_picks(self, question: str, details: dict, history: list[dict] | None = None) -> dict:
         event_name = details.get("event_name")
         if not event_name:
             return {
@@ -1124,13 +1172,13 @@ class ChatMMABot:
                 "metadata": {"query_type": "no_consensus"},
             }
         prompt = self.generator.build_consensus_picks_prompt(context, question)
-        answer, cost = self._call_claude(prompt, max_tokens=1000)
+        answer, cost = self._call_claude(prompt, max_tokens=1000, history=history)
         return {
             "answer": answer,
             "metadata": {"query_type": "consensus_picks", "cost_estimate": cost},
         }
 
-    def _handle_underdogs(self, question: str, details: dict) -> dict:
+    def _handle_underdogs(self, question: str, details: dict, history: list[dict] | None = None) -> dict:
         event_name = details.get("event_name")
         if not event_name:
             return {
@@ -1149,13 +1197,13 @@ class ChatMMABot:
                 "metadata": {"query_type": "no_underdogs"},
             }
         prompt = self.generator.build_underdogs_prompt(context, question)
-        answer, cost = self._call_claude(prompt, max_tokens=1000)
+        answer, cost = self._call_claude(prompt, max_tokens=1000, history=history)
         return {
             "answer": answer,
             "metadata": {"query_type": "underdogs", "cost_estimate": cost},
         }
 
-    def _handle_draftkings_lineup(self, question: str, details: dict) -> dict:
+    def _handle_draftkings_lineup(self, question: str, details: dict, history: list[dict] | None = None) -> dict:
         event_name = details.get("event_name")
         salary_cap = details.get("salary_cap", 50_000)
 
@@ -1193,15 +1241,15 @@ class ChatMMABot:
             }
 
         prompt = self.generator.build_draftkings_prompt(context, question, salary_cap)
-        answer, cost = self._call_claude(prompt, max_tokens=1400)
+        answer, cost = self._call_claude(prompt, max_tokens=1400, history=history)
         return {
             "answer": answer,
             "metadata": {"query_type": "draftkings_lineup", "cost_estimate": cost},
         }
 
-    def _handle_general(self, question: str, details: dict) -> dict:
+    def _handle_general(self, question: str, details: dict, history: list[dict] | None = None) -> dict:
         prompt = self.generator.build_general_prompt(question)
-        answer, cost = self._call_claude(prompt, max_tokens=400)
+        answer, cost = self._call_claude(prompt, max_tokens=400, history=history)
         return {
             "answer": answer,
             "metadata": {"query_type": "general", "cost_estimate": cost},
@@ -1211,8 +1259,8 @@ class ChatMMABot:
 
     @staticmethod
     def _estimate_cost(usage) -> dict:
-        input_cost = (usage.input_tokens / 1_000_000) * 3.0
-        output_cost = (usage.output_tokens / 1_000_000) * 15.0
+        input_cost = (usage.input_tokens / 1_000_000) * CHAT_PRICE_INPUT_PER_MTOK
+        output_cost = (usage.output_tokens / 1_000_000) * CHAT_PRICE_OUTPUT_PER_MTOK
         return {
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,
