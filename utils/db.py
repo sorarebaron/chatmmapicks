@@ -4,6 +4,8 @@ import streamlit as st
 from rapidfuzz import fuzz
 from supabase import create_client, Client
 
+from utils.config import FUZZY_FIGHT_MATCH
+
 
 @st.cache_resource
 def get_supabase() -> Client:
@@ -126,7 +128,7 @@ def get_or_create_fight(
 
     # No exact match — fuzzy-match against all existing fights for this event.
     # Handles accented characters (ñ→n), partial names, and middle-name differences.
-    FUZZY_FIGHT_THRESHOLD = 85
+    FUZZY_FIGHT_THRESHOLD = FUZZY_FIGHT_MATCH
     all_fights = (
         db.table("fights")
         .select("fight_id, fighter_a, fighter_b, weight_class")
@@ -248,13 +250,20 @@ def get_picks_for_event(event_id: str) -> list[dict]:
             "context": context,
             # Extra columns available in the DB but not in the original CSV
             "method": pick.get("method_prediction") or "",
+            # Internal sort key — stripped before export/display
+            "_bout_order": fight.get("bout_order"),
         })
 
-    # Sort by fight bout_order if available, then analyst name
+    # Sort by bout_order (nulls last), then analyst name. The previous
+    # implementation looked up "the first pick by this analyst" regardless of
+    # fight, which scrambled ordering whenever an analyst had multiple picks.
     rows.sort(key=lambda r: (
-        fights.get(next((p["fight_id"] for p in picks if p["analyst_name"] == r["analyst"]), ""), {}).get("bout_order") or 999,
+        r["_bout_order"] is None,
+        r["_bout_order"] or 0,
         r["analyst"],
     ))
+    for r in rows:
+        r.pop("_bout_order", None)
 
     return rows
 
@@ -566,13 +575,25 @@ def get_all_analytics_data() -> dict:
         .data or []
     )
 
-    fights = (
-        db.table("fights")
-        .select("fight_id, event_id, fighter_a, fighter_b, weight_class, bout_order, title_fight, fighter_a_win_odds, fighter_b_win_odds, fighter_a_itd_odds, fighter_b_itd_odds, fighter_a_salary, fighter_b_salary")
-        .limit(10000)
-        .execute()
-        .data or []
-    )
+    # Paginate fights with .range() — PostgREST caps each response at ~1,000
+    # rows regardless of .limit(), so a single .limit(10000) call would start
+    # silently truncating around event #75 (~13 fights/event).
+    fights: list[dict] = []
+    page_size = 1000
+    offset = 0
+    while True:
+        page = (
+            db.table("fights")
+            .select("fight_id, event_id, fighter_a, fighter_b, weight_class, bout_order, title_fight, fighter_a_win_odds, fighter_b_win_odds, fighter_a_itd_odds, fighter_b_itd_odds, fighter_a_salary, fighter_b_salary")
+            .order("fight_id")
+            .range(offset, offset + page_size - 1)
+            .execute()
+            .data or []
+        )
+        fights += page
+        if len(page) < page_size:
+            break
+        offset += page_size
 
     fight_ids = [f["fight_id"] for f in fights]
 

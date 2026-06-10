@@ -5,6 +5,13 @@ import streamlit as st
 import trafilatura
 from rapidfuzz import fuzz, process
 
+from utils.config import (
+    EXTRACTION_MAX_TOKENS,
+    FUZZY_AUTO_RESOLVE,
+    FUZZY_MIN_PROMPT,
+    EXTRACTION_MODEL,
+    get_anthropic_api_key,
+)
 from utils.db import (
     get_fighter_aliases,
     get_or_create_event,
@@ -69,8 +76,8 @@ Return this JSON structure:
 }"""
 
 METHOD_OPTIONS = ["", "KO/TKO", "Submission", "Decision", "NC", "DQ"]
-FUZZY_THRESHOLD = 85
-FUZZY_MIN_SCORE = 50  # below this the match is too weak to prompt; treat as new fighter
+FUZZY_THRESHOLD = FUZZY_AUTO_RESOLVE
+FUZZY_MIN_SCORE = FUZZY_MIN_PROMPT  # below this the match is too weak to prompt; treat as new fighter
 
 # Normalize free-text method strings Claude might return to the canonical values above
 _METHOD_NORMALIZER = {
@@ -120,24 +127,35 @@ def scrape_url(url: str) -> str | None:
     return None
 
 
+class ExtractionTruncatedError(Exception):
+    """Raised when Claude hit the output-token cap mid-extraction."""
+
+
 def call_claude(article_text: str) -> dict:
-    # Support both nested [anthropic] section and flat ANTHROPIC_API_KEY
-    if "anthropic" in st.secrets:
-        api_key = st.secrets["anthropic"]["api_key"]
-    elif "ANTHROPIC_API_KEY" in st.secrets:
-        api_key = st.secrets["ANTHROPIC_API_KEY"]
-    else:
-        available = list(st.secrets.keys())
+    api_key = get_anthropic_api_key()
+    if not api_key:
         raise KeyError(
-            f"Anthropic API key not found. Available secret keys: {available}. "
-            "Add ANTHROPIC_API_KEY = \"sk-ant-...\" to your Streamlit secrets."
+            "Anthropic API key not found in Streamlit secrets. "
+            "Add it under [anthropic] api_key or as ANTHROPIC_API_KEY "
+            "in Settings → Secrets."
         )
     client = anthropic.Anthropic(api_key=api_key)
+    # Instructions go in `system`, untrusted article text in the user turn.
+    # This reduces the chance that instructions embedded in a scraped page
+    # override the extraction rules (the human review stage remains the
+    # primary safeguard).
     message = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=8192,
-        messages=[{"role": "user", "content": EXTRACTION_PROMPT + "\n\n" + article_text}],
+        model=EXTRACTION_MODEL,
+        max_tokens=EXTRACTION_MAX_TOKENS,
+        system=EXTRACTION_PROMPT,
+        messages=[{"role": "user", "content": article_text}],
     )
+    if message.stop_reason == "max_tokens":
+        raise ExtractionTruncatedError(
+            f"The extraction hit the {EXTRACTION_MAX_TOKENS:,}-token output limit "
+            "and was cut off mid-JSON. The article is likely a very large staff-picks "
+            "piece — try splitting the pasted text in half and ingesting each part."
+        )
     raw = message.content[0].text.strip()
     # Strip markdown code fences if the model wraps output anyway
     if raw.startswith("```"):
@@ -230,6 +248,15 @@ elif st.session_state.ing_stage == "text_ready":
                 st.session_state.ing_extracted = extracted
                 st.session_state.ing_stage = "review_picks"
                 st.rerun()
+            except ExtractionTruncatedError as e:
+                st.error(str(e))
+            except json.JSONDecodeError:
+                st.error(
+                    "Claude returned output that couldn't be parsed as JSON. "
+                    "This usually means the article text is malformed or very "
+                    "unusual — try the paste fallback with a cleaner copy of "
+                    "the article, or re-run the extraction."
+                )
             except Exception as e:
                 st.error(f"Extraction failed: {e}")
 
