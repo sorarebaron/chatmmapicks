@@ -941,14 +941,51 @@ class ChatMMABot:
 
     # ── query-type detection ────────────────────────────────────────────────
 
+    @staticmethod
+    def _split_matchup(q: str, sep: str) -> tuple[str, str]:
+        """Extract two fighter-name hints from a lowercased 'A <sep> B' query.
+
+        Takes the last 1-2 words before the separator and the first 1-2 after,
+        strips punctuation, and title-cases. Returns ('', '') if either side
+        is empty (so the caller can fall through to other routing).
+        """
+        parts = q.split(sep)
+        if len(parts) < 2:
+            return "", ""
+        left_words = parts[0].strip().split()
+        right_words = parts[1].strip().split()
+        if not left_words or not right_words:
+            return "", ""
+        fa_words = left_words[-2:] if len(left_words) >= 2 else left_words[-1:]
+        fb_words = right_words[:2] if len(right_words) >= 2 else right_words[:1]
+        fa = re.sub(r"[^\w\s'\-]", "", " ".join(fa_words)).strip().title()
+        fb = re.sub(r"[^\w\s'\-]", "", " ".join(fb_words)).strip().title()
+        return fa, fb
+
     def detect_query_type(self, question: str) -> tuple[str, dict]:
         q = question.lower()
+
+        # An explicit "A vs B" matchup is the least-ambiguous query type, so it
+        # is checked before any keyword routing. Otherwise a fighter surname that
+        # contains a method keyword — e.g. Seokhyeon *Ko* matching the " ko "
+        # knockout token — misroutes the whole question to a finish query.
+        # Only the unambiguous separators go here; " v " / " against " stay in
+        # the fallback loop below so a phrase like "underdog v favorite" isn't
+        # mistaken for a matchup.
+        for sep in (" vs ", " vs. ", " versus "):
+            if sep in q:
+                fa, fb = self._split_matchup(q, sep)
+                if fa and fb:
+                    return (
+                        "fight_specific",
+                        {"fighter_a": fa, "fighter_b": fb, "event_name": self._extract_event_name(q)},
+                    )
 
         if any(
             kw in q
             for kw in [
                 "inside the distance", "inside distance", "finish",
-                "knockout", " ko ", "submission", "most likely to finish",
+                "knockout", "by ko", "via ko", "submission", "most likely to finish",
                 "not go the distance",
             ]
         ):
@@ -988,16 +1025,10 @@ class ChatMMABot:
                 },
             )
 
-        for sep in [" vs ", " vs. ", " versus ", " v ", " against "]:
+        for sep in (" v ", " against "):
             if sep in q:
-                parts = q.split(sep)
-                if len(parts) >= 2:
-                    left_words = parts[0].strip().split()
-                    right_words = parts[1].strip().split()
-                    fa_words = left_words[-2:] if len(left_words) >= 2 else left_words[-1:]
-                    fb_words = right_words[:2] if len(right_words) >= 2 else right_words[:1]
-                    fa = re.sub(r"[^\w\s'\-]", "", " ".join(fa_words)).strip().title()
-                    fb = re.sub(r"[^\w\s'\-]", "", " ".join(fb_words)).strip().title()
+                fa, fb = self._split_matchup(q, sep)
+                if fa and fb:
                     return (
                         "fight_specific",
                         {"fighter_a": fa, "fighter_b": fb, "event_name": self._extract_event_name(q)},
