@@ -429,6 +429,7 @@ elif st.session_state.ing_stage == "review_picks":
 
     if st.button("💾 Save all picks", type="primary", disabled=save_disabled):
         saved_count = 0
+        skipped_count = 0
         try:
             event_id = get_or_create_event(
                 name=event_name.strip(),
@@ -443,6 +444,15 @@ elif st.session_state.ing_stage == "review_picks":
                     fa = overrides.get(pick["fighter_a"], pick["fighter_a"])
                     fb = overrides.get(pick["fighter_b"], pick["fighter_b"])
                     picked = overrides.get(pick["picked_fighter"], pick["picked_fighter"])
+
+                    # Skip prop / unparseable rows that lack a real matchup.
+                    # Some analysts (e.g. Olson's prop bets) yield picks with a
+                    # blank or null fighter name; a null name reaches the form as
+                    # None and would crash get_or_create_fight, so drop the row
+                    # instead of saving it (nothing to clean up in QC afterward).
+                    if not (fa or "").strip() or not (fb or "").strip():
+                        skipped_count += 1
+                        continue
 
                     # Persist any new aliases the user chose to map
                     for orig, canon in overrides.items():
@@ -466,6 +476,7 @@ elif st.session_state.ing_stage == "review_picks":
                     saved_count += 1
 
             st.session_state.ing_saved_count = saved_count
+            st.session_state.ing_saved_skipped = skipped_count
             st.session_state.ing_saved_event = event_name.strip()
             st.session_state.ing_stage = "done"
             st.rerun()
@@ -481,6 +492,12 @@ elif st.session_state.ing_stage == "done":
         f"✅ Saved **{st.session_state.get('ing_saved_count', 0)}** pick(s) "
         f"for **{st.session_state.get('ing_saved_event', '')}**."
     )
+    _skipped = st.session_state.get("ing_saved_skipped", 0)
+    if _skipped:
+        st.info(
+            f"Skipped **{_skipped}** pick(s) with no fighter matchup "
+            "(e.g. prop predictions) — nothing to clean up in QC."
+        )
     if st.button("Ingest another article", type="primary"):
         reset_session()
         st.rerun()
